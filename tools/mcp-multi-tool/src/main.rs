@@ -1,7 +1,11 @@
 use anyhow::Result;
 use mcp_multi_tool::{
     adapters::server::InspectorServer,
-    app::{inspector_service::InspectorService, registry::ToolRegistry},
+    app::{
+        error_budget::{ErrorBudget, ErrorBudgetParams},
+        inspector_service::InspectorService,
+        registry::ToolRegistry,
+    },
     infra::{config::AppConfig, metrics, outbox::Outbox},
     shared::idempotency::IdempotencyStore,
 };
@@ -46,6 +50,13 @@ async fn main() -> Result<()> {
     };
     let outbox = Arc::new(outbox);
     let idempotency = Arc::new(IdempotencyStore::new());
+    let error_budget = Arc::new(ErrorBudget::new(ErrorBudgetParams {
+        enabled: config.error_budget.enabled,
+        success_threshold: config.error_budget.success_threshold,
+        minimum_requests: config.error_budget.minimum_requests as usize,
+        sample_window: Duration::from_secs(config.error_budget.sample_window_secs),
+        freeze_duration: Duration::from_secs(config.error_budget.freeze_window_secs),
+    }));
     {
         let store = idempotency.clone();
         let outbox = outbox.clone();
@@ -78,6 +89,7 @@ async fn main() -> Result<()> {
         outbox,
         idempotency,
         config.idempotency_conflict_policy,
+        error_budget,
     );
     // Start the server. Emit tools/list_changed inside on_initialized so
     // the notification is not lost before the handshake completes.

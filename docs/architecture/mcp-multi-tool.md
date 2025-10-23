@@ -29,6 +29,7 @@
 - Execute remote tool calls through the app layer, producing `CallToolResult` while tracking `InspectionRun` invariants.
 - Outbox persists events to sqlite when `OUTBOX_DB_PATH` is set (and mirrors into JSONL DLQ for backup) via `infra::outbox::Outbox`.
 - Crash harness tests assert that both file and sqlite backends survive process restarts and concurrent writers without event loss.
+- Error-budget guard enforces SLO: if recent failures exceed threshold the inspector freezes `inspector_call` until the budget recovers.
 - `_meta.trace` is assembled after each call, embedding the final `InspectionRunEvent`, streaming progress (when enabled), and the outbox persistence outcome for downstream analytics.
 - Each effect path obeys `CLAIM|OUTBOX`: claim run, perform effect, persist event if downstream is unavailable.
 

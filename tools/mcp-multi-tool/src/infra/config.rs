@@ -12,7 +12,7 @@ const CONFIG_PROFILE_ENV: &str = "APP_CONFIG_PROFILE";
 const DEFAULT_CONFIG_DIR: &str = "config";
 const DEFAULT_PROFILE: &str = "default";
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub metrics_addr: Option<String>,
     pub allow_insecure_metrics_dev: Option<bool>,
@@ -24,6 +24,8 @@ pub struct AppConfig {
     pub outbox_db_path: Option<String>,
     #[serde(default)]
     pub idempotency_conflict_policy: IdempotencyConflictPolicy,
+    #[serde(default)]
+    pub error_budget: ErrorBudgetSettings,
 }
 
 impl AppConfig {
@@ -112,6 +114,9 @@ impl AppConfig {
         if let Some(policy) = overlay.idempotency_conflict_policy {
             self.idempotency_conflict_policy = policy;
         }
+        if let Some(budget) = overlay.error_budget {
+            self.error_budget.apply_overlay(budget);
+        }
     }
 
     pub fn metrics_server_config(&self) -> Result<Option<MetricsServerConfig>> {
@@ -148,6 +153,23 @@ impl AppConfig {
     }
 }
 
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            metrics_addr: None,
+            allow_insecure_metrics_dev: None,
+            metrics_auth_token: None,
+            metrics_tls_cert_path: None,
+            metrics_tls_key_path: None,
+            outbox_path: None,
+            outbox_dlq_path: None,
+            outbox_db_path: None,
+            idempotency_conflict_policy: IdempotencyConflictPolicy::default(),
+            error_budget: ErrorBudgetSettings::default(),
+        }
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct ConfigOverlay {
     metrics_addr: Option<String>,
@@ -159,6 +181,8 @@ struct ConfigOverlay {
     outbox_dlq_path: Option<String>,
     outbox_db_path: Option<String>,
     idempotency_conflict_policy: Option<IdempotencyConflictPolicy>,
+    #[serde(default)]
+    error_budget: Option<ErrorBudgetOverlay>,
 }
 
 impl ConfigOverlay {
@@ -187,6 +211,7 @@ impl ConfigOverlay {
         let idempotency_conflict_policy = env::var("IDEMPOTENCY_CONFLICT_POLICY")
             .ok()
             .and_then(|raw| IdempotencyConflictPolicy::from_str(&raw).ok());
+        let error_budget = ErrorBudgetOverlay::from_env();
         Self {
             metrics_addr,
             allow_insecure_metrics_dev,
@@ -197,6 +222,7 @@ impl ConfigOverlay {
             outbox_dlq_path,
             outbox_db_path,
             idempotency_conflict_policy,
+            error_budget,
         }
     }
 }
@@ -276,6 +302,11 @@ mod tests {
                 ("OUTBOX_PATH", None),
                 ("OUTBOX_DLQ_PATH", None),
                 ("OUTBOX_DB_PATH", None),
+                ("ERROR_BUDGET_ENABLED", None),
+                ("ERROR_BUDGET_SUCCESS_THRESHOLD", None),
+                ("ERROR_BUDGET_SAMPLE_WINDOW_SECS", None),
+                ("ERROR_BUDGET_MIN_REQUESTS", None),
+                ("ERROR_BUDGET_FREEZE_SECS", None),
             ],
             || {
                 let cfg = AppConfig::load_from_dir(dir.path()).expect("config load");
@@ -287,6 +318,8 @@ mod tests {
                 let (main, dlq) = cfg.outbox_paths();
                 assert_eq!(main, PathBuf::from("data/outbox/events.jsonl"));
                 assert_eq!(dlq, PathBuf::from("data/outbox/dlq.jsonl"));
+                assert!(cfg.error_budget.enabled);
+                assert_eq!(cfg.error_budget.success_threshold, 0.99);
             },
         );
         Ok(())
@@ -316,6 +349,8 @@ mod tests {
                 ("METRICS_TLS_CERT_PATH", Some("/tmp/cert.pem")),
                 ("METRICS_TLS_KEY_PATH", Some("/tmp/key.pem")),
                 ("IDEMPOTENCY_CONFLICT_POLICY", Some("return_existing")),
+                ("ERROR_BUDGET_ENABLED", Some("false")),
+                ("ERROR_BUDGET_SUCCESS_THRESHOLD", Some("0.75")),
             ],
             || {
                 let cfg = AppConfig::load_from_dir(dir.path()).expect("config load");
@@ -329,9 +364,28 @@ mod tests {
                     cfg.idempotency_conflict_policy,
                     IdempotencyConflictPolicy::ReturnExisting
                 );
+                assert!(!cfg.error_budget.enabled);
+                assert_eq!(cfg.error_budget.success_threshold, 0.75);
             },
         );
         Ok(())
+    }
+
+    #[test]
+    fn error_budget_overlay_merges_partials() {
+        let mut settings = ErrorBudgetSettings::default();
+        settings.apply_overlay(ErrorBudgetOverlay {
+            enabled: Some(false),
+            success_threshold: Some(0.9),
+            sample_window_secs: None,
+            minimum_requests: Some(10),
+            freeze_window_secs: Some(60),
+        });
+        assert!(!settings.enabled);
+        assert_eq!(settings.success_threshold, 0.9);
+        assert_eq!(settings.minimum_requests, 10);
+        assert_eq!(settings.freeze_window_secs, 60);
+        assert_eq!(settings.sample_window_secs, 120);
     }
 
     #[test]
@@ -357,5 +411,120 @@ mod tests {
         );
 
         Ok(())
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ErrorBudgetSettings {
+    #[serde(default = "ErrorBudgetSettings::default_enabled")]
+    pub enabled: bool,
+    #[serde(default = "ErrorBudgetSettings::default_success_threshold")]
+    pub success_threshold: f64,
+    #[serde(default = "ErrorBudgetSettings::default_sample_window_secs")]
+    pub sample_window_secs: u64,
+    #[serde(default = "ErrorBudgetSettings::default_minimum_requests")]
+    pub minimum_requests: u64,
+    #[serde(default = "ErrorBudgetSettings::default_freeze_window_secs")]
+    pub freeze_window_secs: u64,
+}
+
+impl Default for ErrorBudgetSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            success_threshold: 0.99,
+            sample_window_secs: 120,
+            minimum_requests: 20,
+            freeze_window_secs: 300,
+        }
+    }
+}
+
+impl ErrorBudgetSettings {
+    const fn default_enabled() -> bool {
+        true
+    }
+    const fn default_success_threshold() -> f64 {
+        0.99
+    }
+    const fn default_sample_window_secs() -> u64 {
+        120
+    }
+    const fn default_minimum_requests() -> u64 {
+        20
+    }
+    const fn default_freeze_window_secs() -> u64 {
+        300
+    }
+
+    fn apply_overlay(&mut self, overlay: ErrorBudgetOverlay) {
+        if let Some(value) = overlay.enabled {
+            self.enabled = value;
+        }
+        if let Some(value) = overlay.success_threshold {
+            self.success_threshold = value;
+        }
+        if let Some(value) = overlay.sample_window_secs {
+            self.sample_window_secs = value;
+        }
+        if let Some(value) = overlay.minimum_requests {
+            self.minimum_requests = value;
+        }
+        if let Some(value) = overlay.freeze_window_secs {
+            self.freeze_window_secs = value;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct ErrorBudgetOverlay {
+    enabled: Option<bool>,
+    success_threshold: Option<f64>,
+    sample_window_secs: Option<u64>,
+    minimum_requests: Option<u64>,
+    freeze_window_secs: Option<u64>,
+}
+
+impl ErrorBudgetOverlay {
+    fn from_env() -> Option<Self> {
+        let mut overlay = Self::default();
+        let mut seen = false;
+
+        if let Some(value) = env::var("ERROR_BUDGET_ENABLED")
+            .ok()
+            .and_then(|v| v.parse::<bool>().ok())
+        {
+            overlay.enabled = Some(value);
+            seen = true;
+        }
+        if let Some(value) = env::var("ERROR_BUDGET_SUCCESS_THRESHOLD")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+        {
+            overlay.success_threshold = Some(value);
+            seen = true;
+        }
+        if let Some(value) = env::var("ERROR_BUDGET_SAMPLE_WINDOW_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            overlay.sample_window_secs = Some(value);
+            seen = true;
+        }
+        if let Some(value) = env::var("ERROR_BUDGET_MIN_REQUESTS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            overlay.minimum_requests = Some(value);
+            seen = true;
+        }
+        if let Some(value) = env::var("ERROR_BUDGET_FREEZE_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            overlay.freeze_window_secs = Some(value);
+            seen = true;
+        }
+
+        if seen { Some(overlay) } else { None }
     }
 }

@@ -35,6 +35,10 @@ When `inspector_call` runs with `{ "stream": true }`, the `structured_content` f
 
 Each entry in `events` follows the `StreamEvent` definition inside `call-result.schema.json` and mirrors progress notifications emitted by the downstream MCP tool.
 
+### Error Codes
+
+- `ERROR_BUDGET_EXHAUSTED` — `inspector_call` refuses execution because recent failures breached the configured error budget. Payload includes `frozen_until`, `success_rate`, and `sample_size` fields.
+
 ### Trace Metadata
 
 Every `inspector_call` response enriches `CallToolResult._meta.trace` with a payload that matches `call-trace.schema.json`. It embeds the persisted `InspectionRunEvent`, records whether streaming was enabled, copies any captured `StreamEvent` notifications, and flags whether the transactional outbox write succeeded.

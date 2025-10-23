@@ -29,6 +29,7 @@ Any MCP-capable agent (Codex CLI, Claude Code, Gemini Code Assist, etc.) can con
 - Contracts: MCP 2025-06-18, `rmcp = 0.8.1`, public JSON Schemas for all emitted events.
 - Reliability: idempotency via `idempotency_key`, transactional outbox with 60s reaper TTL.
 - Observability: Prometheus `/metrics`, TLS + Auth (dev override `ALLOW_INSECURE_METRICS_DEV=true`).
+- SLO Guardrails: automatic error-budget freeze halts `inspector_call` when success rate drops below the configured threshold.
 - Tests: `cargo test` plus property/race tests, coverage ≥85% Lines & Statements for touched code.
 - CI: GitHub Actions pipeline runs fmt, clippy, tests, coverage gate.
 
@@ -78,6 +79,7 @@ Optional flags `--sse-url` and `--http-url` let you probe additional transports;
 - `OUTBOX_DB_PATH` switches the outbox to a durable sqlite store (falls back to JSONL when unset).
 - `OUTBOX_PATH` and `OUTBOX_DLQ_PATH` remain append-only exports for observability and recovery.
 - `IDEMPOTENCY_CONFLICT_POLICY` toggles duplicate behaviour (`return_existing` vs `409`).
+- `ERROR_BUDGET_*` knobs (enabled/threshold/sample window/min requests/freeze) tune the error-budget freeze gate.
 - `external_reference` (inspector_call argument) combines with idempotency to deduplicate upstream events across transports.
 - `stream` (inspector_call argument) enables capturing downstream progress events; the final payload exposes `mode: "stream"`, `events`, and the terminal response snapshot.
 

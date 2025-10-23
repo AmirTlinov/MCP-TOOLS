@@ -39,7 +39,7 @@ Format: `<ID> — <concise action> — DoD`. Every item maps to a T-ID.
 - [x] T-0017 — Latency metrics p50/p95/p99 — DoD: Prometheus scrape works.
 - [x] T-0018 — `/metrics` with Auth + TLS (+dev flag) — DoD: denied without auth; dev override works.
 - [x] T-0019 — Logs/trace with correlation IDs — DoD: structured logging validated.
-- [ ] T-0035 — Error budget freeze — DoD: gate trips in CI when SLO breached.
+- [x] T-0035 — Error budget freeze — DoD: gate trips in CI when SLO breached.
 
 ## 6. Contracts & Docs (WS-006)
 - [x] T-0020 — Event JSON Schemas — DoD: 100% validation coverage.

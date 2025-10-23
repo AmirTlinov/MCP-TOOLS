@@ -1,16 +1,20 @@
 use anyhow::Result;
 use rmcp::{ErrorData as McpError, ServerHandler, model::*};
 use serde_json::{Value, json};
-use std::{sync::Arc, time::Instant};
-use time::OffsetDateTime;
+use std::{
+    sync::Arc,
+    time::{Instant, SystemTime},
+};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::{
     app::{
+        error_budget::{ErrorBudget, FreezeReport, RecordOutcome},
         inspector_service::{CallOutcome, InspectorService},
         registry::ToolRegistry,
     },
     domain::run::{InspectionRun, RunState},
-    infra::{config::IdempotencyConflictPolicy, outbox::Outbox},
+    infra::{config::IdempotencyConflictPolicy, metrics, outbox::Outbox},
     shared::{
         idempotency::{ClaimOutcome, IdempotencyStore},
         types::{
@@ -27,6 +31,7 @@ pub struct InspectorServer {
     outbox: Arc<Outbox>,
     idempotency: Arc<IdempotencyStore>,
     conflict_policy: IdempotencyConflictPolicy,
+    error_budget: Arc<ErrorBudget>,
 }
 
 impl InspectorServer {
@@ -36,6 +41,7 @@ impl InspectorServer {
         outbox: Arc<Outbox>,
         idempotency: Arc<IdempotencyStore>,
         conflict_policy: IdempotencyConflictPolicy,
+        error_budget: Arc<ErrorBudget>,
     ) -> Self {
         Self {
             svc,
@@ -43,6 +49,7 @@ impl InspectorServer {
             outbox,
             idempotency,
             conflict_policy,
+            error_budget,
         }
     }
 
@@ -298,7 +305,8 @@ impl ServerHandler for InspectorServer {
                         {"code":"MISSING_COMMAND","tool":"inspector_list_tools","reason":"command was not provided for stdio","action":"Pass command (and args if needed) or set INSPECTOR_STDIO_CMD"},
                         {"code":"MISSING_COMMAND","tool":"inspector_describe","reason":"command was not provided for stdio","action":"Pass command (and args if needed) or set INSPECTOR_STDIO_CMD"},
                         {"code":"MISSING_STDIO_CMD","tool":"inspector_call","reason":"INSPECTOR_STDIO_CMD not set","action":"Export the environment variable or provide stdio override"},
-                        {"code":"UNKNOWN_TOOL","tool":"*","reason":"Requested tool is not registered","action":"Use help or inspector_list_tools"}
+                        {"code":"UNKNOWN_TOOL","tool":"*","reason":"Requested tool is not registered","action":"Use help or inspector_list_tools"},
+                        {"code":"ERROR_BUDGET_EXHAUSTED","tool":"inspector_call","reason":"Recent failure rate breached the error budget","action":"Wait for freeze window or reduce downstream errors"}
                       ]
                     });
                     Ok(CallToolResult::structured(spec))
@@ -342,6 +350,7 @@ impl ServerHandler for InspectorServer {
                         Ok(req) => {
                             let started_at = OffsetDateTime::now_utc();
                             let timer = Instant::now();
+                            let admit_clock = SystemTime::now();
                             let mut target_descriptor = TargetDescriptor {
                                 transport: "stdio".into(),
                                 command: None,
@@ -400,6 +409,39 @@ impl ServerHandler for InspectorServer {
                             }
                             if let Some(key) = claimed_key.as_ref() {
                                 this.idempotency.mark_started(key, started_at);
+                            }
+                            match this.error_budget.admit(admit_clock) {
+                                Ok(thawed) => {
+                                    if thawed {
+                                        metrics::set_error_budget_frozen(false);
+                                    }
+                                }
+                                Err(report) => {
+                                    run.fail();
+                                    let duration_ms = timer.elapsed().as_millis() as u64;
+                                    let payload = freeze_payload(&report);
+                                    let event = this.build_event(
+                                        &run,
+                                        &req,
+                                        started_at,
+                                        duration_ms,
+                                        None,
+                                        None,
+                                        Some("error budget exhausted".into()),
+                                        external_reference.clone(),
+                                    );
+                                    if let Err(e) = this.outbox.append(&event) {
+                                        tracing::error!(%run_id, error=%e, "failed to append freeze event to outbox");
+                                    }
+                                    if let Some(ref ext) = external_reference {
+                                        this.idempotency.record_external_ref(ext, event.clone());
+                                    }
+                                    if let Some(key) = claimed_key {
+                                        this.idempotency.complete(&key, event.clone());
+                                    }
+                                    tracing::warn!(%run_id, "error budget freeze active");
+                                    return Ok(CallToolResult::structured_error(payload));
+                                }
                             }
                             let call_result = if let Some(http) = req.http.as_ref() {
                                 target_descriptor.transport = "http".into();
@@ -506,6 +548,17 @@ impl ServerHandler for InspectorServer {
                                         outbox_persisted,
                                     };
                                     Self::attach_trace(&mut result, &trace);
+                                    match this.error_budget.record_success_now() {
+                                        RecordOutcome::FreezeTriggered(report) => {
+                                            metrics::set_error_budget_frozen(true);
+                                            tracing::warn!(%run_id, success_rate = report.success_rate, sample_size = report.sample_size, "error budget freeze triggered on success");
+                                        }
+                                        RecordOutcome::FreezeCleared => {
+                                            metrics::set_error_budget_frozen(false);
+                                            tracing::info!(%run_id, "error budget freeze lifted");
+                                        }
+                                        RecordOutcome::None => {}
+                                    }
                                     Ok(result)
                                 }
                                 Err(error) => {
@@ -543,6 +596,17 @@ impl ServerHandler for InspectorServer {
                                         outbox_persisted,
                                     };
                                     Self::attach_trace(&mut err_result, &trace);
+                                    match this.error_budget.record_failure_now() {
+                                        RecordOutcome::FreezeTriggered(report) => {
+                                            metrics::set_error_budget_frozen(true);
+                                            tracing::warn!(%run_id, success_rate = report.success_rate, sample_size = report.sample_size, "error budget freeze triggered");
+                                        }
+                                        RecordOutcome::FreezeCleared => {
+                                            metrics::set_error_budget_frozen(false);
+                                            tracing::info!(%run_id, "error budget freeze lifted");
+                                        }
+                                        RecordOutcome::None => {}
+                                    }
                                     Err(err_result)
                                 }
                             }
@@ -608,5 +672,19 @@ fn extract_external_reference(result: &CallToolResult) -> Option<String> {
         meta.get("externalReference")
             .or_else(|| meta.get("external_reference"))
             .and_then(|value| value.as_str().map(|s| s.to_string()))
+    })
+}
+
+fn freeze_payload(report: &FreezeReport) -> serde_json::Value {
+    let until_dt = OffsetDateTime::from(report.until);
+    let until = until_dt
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".into());
+    json!({
+        "error": "error budget exhausted",
+        "code": "ERROR_BUDGET_EXHAUSTED",
+        "frozen_until": until,
+        "success_rate": report.success_rate,
+        "sample_size": report.sample_size,
     })
 }

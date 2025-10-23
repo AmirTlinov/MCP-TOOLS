@@ -11,6 +11,7 @@
 | --- | --- | --- | --- |
 | `inspector_inflight` | gauge | Concurrent inspector operations across transports. | — |
 | `outbox_backlog` | gauge | Total events persisted in the transactional outbox (JSONL or sqlite). | — |
+| `error_budget_frozen` | gauge | 1 when the error budget freeze is active, otherwise 0. | — |
 
 ## Histograms
 | Metric | Buckets | Description | Labels |

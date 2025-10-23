@@ -42,6 +42,14 @@ pub static REAPER_TIMEOUTS: Lazy<IntCounter> = Lazy::new(|| {
     .unwrap()
 });
 
+pub static ERROR_BUDGET_FROZEN: Lazy<IntGauge> = Lazy::new(|| {
+    register_int_gauge!(
+        "error_budget_frozen",
+        "1 when the inspector is in an error budget freeze"
+    )
+    .unwrap()
+});
+
 #[derive(Clone)]
 pub struct PendingGaugeGuard;
 
@@ -170,4 +178,8 @@ pub fn record_reaper_timeout(count: usize) {
     if count > 0 {
         REAPER_TIMEOUTS.inc_by(count as u64);
     }
+}
+
+pub fn set_error_budget_frozen(frozen: bool) {
+    ERROR_BUDGET_FROZEN.set(if frozen { 1 } else { 0 });
 }
