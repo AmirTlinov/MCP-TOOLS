@@ -1,4 +1,4 @@
-# Plan.md — MCP Stdio Server + MCP Inspector (Rust, rmcp 0.8.1)
+# Plan.md — MCP Stdio Server + MCP MultiTool (Rust, rmcp 0.8.1)
 
 ## 1) Executive Summary
 - Цель: единый Rust-бинарник MCP stdio сервера с инструментом MCP MultiTool для когнитивно лёгкого тестирования любых MCP‑серверов (stdio/SSE/HTTP).
