@@ -44,7 +44,7 @@ Format: `<ID> — <concise action> — DoD`. Every item maps to a T-ID.
 ## 6. Contracts & Docs (WS-006)
 - [x] T-0020 — Event JSON Schemas — DoD: 100% validation coverage.
 - [x] T-0021 — Public contracts handbook — DoD: walkthrough ≤15 minutes.
-- [ ] T-0027 — How-To docs — DoD: onboarding doc published.
+- [x] T-0027 — How-To docs — DoD: onboarding doc published.
 
 ## 7. Quality Gates (WS-007)
 - [x] T-0022 — CI coverage gate 85% — DoD: pipeline fails under threshold.
