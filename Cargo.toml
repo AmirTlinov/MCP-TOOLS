@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "mcp_inspector"
+]
+resolver = "3"
