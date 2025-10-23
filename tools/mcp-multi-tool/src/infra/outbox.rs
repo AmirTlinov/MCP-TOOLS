@@ -9,12 +9,8 @@ use serde::Serialize;
 
 #[derive(Debug)]
 enum Backend {
-    File {
-        main_path: PathBuf,
-    },
-    Sqlite {
-        conn: Mutex<Connection>,
-    },
+    File { main_path: PathBuf },
+    Sqlite { conn: Mutex<Connection> },
 }
 
 #[derive(Debug)]

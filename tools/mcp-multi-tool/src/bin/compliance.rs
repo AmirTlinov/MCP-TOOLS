@@ -27,6 +27,22 @@ struct Args {
     #[arg(long)]
     cwd: Option<PathBuf>,
 
+    /// Optional SSE endpoint for probe validation
+    #[arg(long)]
+    sse_url: Option<String>,
+
+    /// Optional HTTP endpoint for probe validation
+    #[arg(long)]
+    http_url: Option<String>,
+
+    /// HTTP headers KEY=VALUE (repeat flag)
+    #[arg(long, value_parser = parse_env)]
+    http_header: Vec<(String, String)>,
+
+    /// HTTP auth token (Bearer)
+    #[arg(long)]
+    http_auth_token: Option<String>,
+
     /// Path to write the JSON report (optional)
     #[arg(long)]
     output_json: Option<PathBuf>,
@@ -51,6 +67,11 @@ async fn main() -> Result<()> {
         env_map.insert(k, v);
     }
 
+    let mut http_headers = BTreeMap::new();
+    for (k, v) in args.http_header {
+        http_headers.insert(k, v);
+    }
+
     let target = ComplianceTarget {
         command: args.command,
         args: args.args,
@@ -60,6 +81,14 @@ async fn main() -> Result<()> {
             Some(env_map)
         },
         cwd: args.cwd.as_ref().map(|p| p.to_string_lossy().to_string()),
+        sse_url: args.sse_url,
+        http_url: args.http_url,
+        http_headers: if http_headers.is_empty() {
+            None
+        } else {
+            Some(http_headers)
+        },
+        http_auth_token: args.http_auth_token,
     };
 
     let suite = ComplianceSuite::new();

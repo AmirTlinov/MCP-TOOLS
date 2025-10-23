@@ -13,7 +13,7 @@ use tokio::{process::Command, time::timeout};
 use crate::{
     infra::metrics::{LATENCY_HISTO, PendingGaugeGuard},
     shared::{
-        types::*,
+        types::{HttpTarget, ProbeRequest, ProbeResult, SseTarget, TargetTransportKind},
         utils::{measure_latency, parse_command},
     },
 };
@@ -207,6 +207,45 @@ impl InspectorService {
         Ok(tools)
     }
 
+    pub async fn list_tools_sse(&self, target: &SseTarget) -> Result<Vec<Tool>> {
+        let _pending = PendingGaugeGuard::new();
+        let url = target.url.clone();
+        if url.is_empty() {
+            anyhow::bail!("missing sse url");
+        }
+        let handshake_timeout =
+            Duration::from_millis(target.handshake_timeout_ms.unwrap_or(15_000));
+        let transport = SseClientTransport::start(url).await?;
+        let client = timeout(handshake_timeout, ().serve(transport))
+            .await
+            .map_err(|_| anyhow::anyhow!("sse handshake timed out"))??;
+        let tools = client.list_tools(Default::default()).await?.tools;
+        Ok(tools)
+    }
+
+    pub async fn list_tools_http(&self, target: &HttpTarget) -> Result<Vec<Tool>> {
+        let _pending = PendingGaugeGuard::new();
+        let url = target.url.clone();
+        if url.is_empty() {
+            anyhow::bail!("missing http url");
+        }
+        let mut cfg =
+            rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig::with_uri(
+                url.clone(),
+            );
+        if let Some(tok) = &target.auth_token {
+            cfg = cfg.auth_header(tok);
+        }
+        let transport = StreamableHttpClientTransport::with_client(reqwest::Client::new(), cfg);
+        let handshake_timeout =
+            Duration::from_millis(target.handshake_timeout_ms.unwrap_or(15_000));
+        let client = timeout(handshake_timeout, ().serve(transport))
+            .await
+            .map_err(|_| anyhow::anyhow!("http handshake timed out"))??;
+        let tools = client.list_tools(Default::default()).await?.tools;
+        Ok(tools)
+    }
+
     pub async fn call_stdio(
         &self,
         command: String,
@@ -230,6 +269,65 @@ impl InspectorService {
         let client = ().serve(TokioChildProcess::new(cmd)?).await?;
         let res = client
             .call_tool(rmcp::model::CallToolRequestParam {
+                name: tool_name.into(),
+                arguments: arguments_json.as_object().cloned(),
+            })
+            .await?;
+        Ok(res)
+    }
+
+    pub async fn call_sse(
+        &self,
+        target: &SseTarget,
+        tool_name: String,
+        arguments_json: serde_json::Value,
+    ) -> Result<CallToolResult> {
+        let _pending = PendingGaugeGuard::new();
+        let url = target.url.clone();
+        if url.is_empty() {
+            anyhow::bail!("missing sse url");
+        }
+        let handshake_timeout =
+            Duration::from_millis(target.handshake_timeout_ms.unwrap_or(15_000));
+        let transport = SseClientTransport::start(url).await?;
+        let client = timeout(handshake_timeout, ().serve(transport))
+            .await
+            .map_err(|_| anyhow::anyhow!("sse handshake timed out"))??;
+        let res = client
+            .call_tool(CallToolRequestParam {
+                name: tool_name.into(),
+                arguments: arguments_json.as_object().cloned(),
+            })
+            .await?;
+        Ok(res)
+    }
+
+    pub async fn call_http(
+        &self,
+        target: &HttpTarget,
+        tool_name: String,
+        arguments_json: serde_json::Value,
+    ) -> Result<CallToolResult> {
+        let _pending = PendingGaugeGuard::new();
+        let url = target.url.clone();
+        if url.is_empty() {
+            anyhow::bail!("missing http url");
+        }
+        let mut cfg =
+            rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig::with_uri(
+                url.clone(),
+            );
+        if let Some(tok) = &target.auth_token {
+            cfg = cfg.auth_header(tok);
+        }
+        let transport = StreamableHttpClientTransport::with_client(reqwest::Client::new(), cfg);
+        let handshake_timeout =
+            Duration::from_millis(target.handshake_timeout_ms.unwrap_or(15_000));
+        let client = timeout(handshake_timeout, ().serve(transport))
+            .await
+            .map_err(|_| anyhow::anyhow!("http handshake timed out"))??;
+        let res = client
+            .call_tool(CallToolRequestParam {
                 name: tool_name.into(),
                 arguments: arguments_json.as_object().cloned(),
             })

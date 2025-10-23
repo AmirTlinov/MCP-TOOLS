@@ -183,8 +183,8 @@ impl ServerHandler for InspectorServer {
                       ],
                       "constraints": {
                         "inspector_probe": {"transports":["Stdio","Sse","Http"]},
-                        "inspector_list_tools": {"transports":["Stdio"]},
-                        "inspector_call": {"transports":["Stdio"]}
+                        "inspector_list_tools": {"transports":["Stdio","Sse","Http"]},
+                        "inspector_call": {"transports":["Stdio","Sse","Http"]}
                       },
                       "env": {
                         "INSPECTOR_STDIO_CMD": {
@@ -224,7 +224,9 @@ impl ServerHandler for InspectorServer {
                             {"name":"command","type":"string","required":true,"default":null,"desc":"Target stdio server process"},
                             {"name":"args","type":"array<string>","required":false,"default":[],"desc":"Process arguments"},
                             {"name":"env","type":"map<string,string>","required":false,"default":null,"desc":"Environment variables"},
-                            {"name":"cwd","type":"string","required":false,"default":null,"desc":"Working directory"}
+                            {"name":"cwd","type":"string","required":false,"default":null,"desc":"Working directory"},
+                            {"name":"sse","type":"object","required":false,"default":null,"desc":"SSE override: {url,headers?,handshake_timeout_ms?}"},
+                            {"name":"http","type":"object","required":false,"default":null,"desc":"HTTP override: {url,headers?,auth_token?,handshake_timeout_ms?}"}
                           ],
                           "returns": {"tools":"array<Tool>"}
                         },
@@ -233,9 +235,11 @@ impl ServerHandler for InspectorServer {
                           "params_table": [
                             {"name":"tool_name","type":"string","required":true,"default":null,"desc":"Tool name on the target server"},
                             {"name":"arguments_json","type":"object","required":true,"default":{},"desc":"Tool arguments"},
-                            {"name":"stdio","type":"object","required":false,"default":null,"desc":"Override stdio target: {command,args,env?,cwd?}"}
+                            {"name":"stdio","type":"object","required":false,"default":null,"desc":"Override stdio target: {command,args,env?,cwd?}"},
+                            {"name":"sse","type":"object","required":false,"default":null,"desc":"SSE override: {url,headers?,handshake_timeout_ms?}"},
+                            {"name":"http","type":"object","required":false,"default":null,"desc":"HTTP override: {url,headers?,auth_token?,handshake_timeout_ms?}"}
                           ],
-                          "preconditions": ["Pass 'stdio' override or configure INSPECTOR_STDIO_CMD env"],
+                          "preconditions": ["Provide one of stdio/sse/http overrides or configure INSPECTOR_STDIO_CMD env"],
                           "returns": {"content":"array<Content>","structured_content":"object|null"}
                         }
                       },
@@ -311,6 +315,7 @@ impl ServerHandler for InspectorServer {
                                 transport: "stdio".into(),
                                 command: None,
                                 url: None,
+                                headers: None,
                             };
                             let mut claimed_key: Option<String> = None;
                             if let Some(key) = req.idempotency_key.clone() {
@@ -343,7 +348,30 @@ impl ServerHandler for InspectorServer {
                                     }
                                 }
                             }
-                            let call_outcome = if let Some(target) = req.stdio.as_ref() {
+                            let call_outcome = if let Some(http) = req.http.as_ref() {
+                                target_descriptor.transport = "http".into();
+                                target_descriptor.url = Some(http.url.clone());
+                                target_descriptor.headers = http.headers.clone();
+                                this.svc
+                                    .call_http(
+                                        http,
+                                        req.tool_name.clone(),
+                                        req.arguments_json.clone(),
+                                    )
+                                    .await
+                            } else if let Some(sse) = req.sse.as_ref() {
+                                target_descriptor.transport = "sse".into();
+                                target_descriptor.url = Some(sse.url.clone());
+                                target_descriptor.headers = sse.headers.clone();
+                                this.svc
+                                    .call_sse(
+                                        sse,
+                                        req.tool_name.clone(),
+                                        req.arguments_json.clone(),
+                                    )
+                                    .await
+                            } else if let Some(target) = req.stdio.as_ref() {
+                                target_descriptor.transport = "stdio".into();
                                 target_descriptor.command = Some(target.command.clone());
                                 this.svc
                                     .call_stdio(
@@ -361,6 +389,7 @@ impl ServerHandler for InspectorServer {
                                     if let Some(cmd) = default_cmd {
                                         crate::shared::utils::parse_command(&cmd)
                                             .map(|(program, args)| {
+                                                target_descriptor.transport = "stdio".into();
                                                 target_descriptor.command = Some(program.clone());
                                                 (program, args)
                                             })

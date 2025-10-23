@@ -18,6 +18,14 @@ pub struct ComplianceTarget {
     pub env: Option<BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sse_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_headers: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_auth_token: Option<String>,
 }
 
 impl ComplianceTarget {
@@ -99,6 +107,13 @@ impl ComplianceSuite {
         cases.push(self.probe_case(&target).await?);
         cases.push(self.list_tools_case(&target).await?);
         cases.push(self.help_case(&target).await?);
+        if let Some(sse_case) = self.probe_sse_case(&target).await? {
+            cases.push(sse_case);
+        }
+        if let Some(http_case) = self.probe_http_case(&target).await? {
+            cases.push(http_case);
+        }
+        cases.push(self.missing_command_case().await?);
 
         let finished_at = OffsetDateTime::now_utc();
         let pass_count = cases.iter().filter(|c| c.passed).count() as f64;
@@ -218,6 +233,101 @@ impl ComplianceSuite {
                 })),
             }),
         }
+    }
+
+    async fn probe_sse_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {
+        let Some(url) = target.sse_url.clone() else {
+            return Ok(None);
+        };
+        let timer = Instant::now();
+        let req = ProbeRequest {
+            transport: Some(TargetTransportKind::Sse),
+            command: None,
+            args: None,
+            env: None,
+            cwd: None,
+            url: Some(url.clone()),
+            headers: None,
+            auth_token: None,
+            handshake_timeout_ms: Some(15_000),
+        };
+        let outcome = self.svc.probe(req).await;
+        Ok(Some(match outcome {
+            Ok(res) => CaseResult {
+                name: "probe_sse".into(),
+                passed: res.ok,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({
+                    "url": url,
+                    "latency_ms": res.latency_ms,
+                    "error": res.error,
+                })),
+            },
+            Err(err) => CaseResult {
+                name: "probe_sse".into(),
+                passed: false,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({"error": err.to_string()})),
+            },
+        }))
+    }
+
+    async fn probe_http_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {
+        let Some(url) = target.http_url.clone() else {
+            return Ok(None);
+        };
+        let timer = Instant::now();
+        let mut req = ProbeRequest::default();
+        req.transport = Some(TargetTransportKind::Http);
+        req.url = Some(url.clone());
+        req.headers = target.http_headers.clone();
+        req.auth_token = target.http_auth_token.clone();
+        req.handshake_timeout_ms = Some(15_000);
+        let outcome = self.svc.probe(req).await;
+        Ok(Some(match outcome {
+            Ok(res) => CaseResult {
+                name: "probe_http".into(),
+                passed: res.ok,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({
+                    "url": url,
+                    "latency_ms": res.latency_ms,
+                    "error": res.error,
+                })),
+            },
+            Err(err) => CaseResult {
+                name: "probe_http".into(),
+                passed: false,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({"error": err.to_string()})),
+            },
+        }))
+    }
+
+    async fn missing_command_case(&self) -> Result<CaseResult> {
+        let timer = Instant::now();
+        let req = ProbeRequest {
+            transport: Some(TargetTransportKind::Stdio),
+            command: None,
+            args: None,
+            env: None,
+            cwd: None,
+            url: None,
+            headers: None,
+            auth_token: None,
+            handshake_timeout_ms: Some(1000),
+        };
+        let probe = self.svc.probe(req).await;
+        let (passed, detail) = match probe {
+            Ok(res) => (!res.ok, json!({"expected_error": true, "response": res})),
+            Err(err) => (true, json!({"error": err.to_string()})),
+        };
+        Ok(CaseResult {
+            name: "negative_missing_command".into(),
+            passed,
+            duration_ms: timer.elapsed().as_millis() as u64,
+            detail: Some(detail),
+        })
     }
 
     fn snapshot(&self, res: &rmcp::model::CallToolResult) -> Option<Value> {

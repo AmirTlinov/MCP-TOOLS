@@ -47,6 +47,10 @@ pub struct CallRequest {
     // optional stdio target overrides (takes precedence over environment defaults)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stdio: Option<StdioTarget>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sse: Option<SseTarget>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http: Option<HttpTarget>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
@@ -67,6 +71,28 @@ pub struct TargetDescriptor {
     pub command: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<std::collections::BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+pub struct SseTarget {
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<std::collections::BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handshake_timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+pub struct HttpTarget {
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<std::collections::BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handshake_timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]

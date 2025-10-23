@@ -3,11 +3,14 @@ use assert_cmd::cargo::cargo_bin;
 use serde_json::Value;
 use std::process::Command;
 
+mod harness;
+use harness::MockMcpCommand;
+
 #[test]
 fn compliance_self_check_passes() -> Result<()> {
-    let target_bin = cargo_bin("mcp-multi-tool");
+    let target_path = MockMcpCommand::stdio_path();
     let mut cmd = Command::new(cargo_bin("compliance"));
-    cmd.arg("--command").arg(target_bin.display().to_string());
+    cmd.arg("--command").arg(target_path);
     let output = cmd.output()?;
     assert!(
         output.status.success(),
