@@ -5,12 +5,18 @@ use std::{sync::Arc, time::Instant};
 use time::OffsetDateTime;
 
 use crate::{
-    app::{inspector_service::InspectorService, registry::ToolRegistry},
+    app::{
+        inspector_service::{CallOutcome, InspectorService},
+        registry::ToolRegistry,
+    },
     domain::run::{InspectionRun, RunState},
     infra::{config::IdempotencyConflictPolicy, outbox::Outbox},
     shared::{
         idempotency::{ClaimOutcome, IdempotencyStore},
-        types::{CallRequest, DescribeRequest, InspectionRunEvent, ProbeRequest, TargetDescriptor},
+        types::{
+            CallRequest, CallTrace, DescribeRequest, InspectionRunEvent, ProbeRequest,
+            TargetDescriptor,
+        },
     },
 };
 
@@ -96,6 +102,19 @@ impl InspectorServer {
 
     fn snapshot_result(&self, result: &CallToolResult) -> Option<Value> {
         serde_json::to_value(result).ok()
+    }
+
+    fn attach_trace(result: &mut CallToolResult, trace: &CallTrace) {
+        match serde_json::to_value(trace) {
+            Ok(value) => {
+                let mut meta = result.meta.take().unwrap_or_else(Meta::new);
+                meta.insert("trace".into(), value);
+                result.meta = Some(meta);
+            }
+            Err(err) => {
+                tracing::error!(%err, "failed to serialize call trace");
+            }
+        }
     }
 }
 
@@ -443,7 +462,10 @@ impl ServerHandler for InspectorServer {
                                 }
                             };
                             match call_result {
-                                Ok(res) => {
+                                Ok(CallOutcome {
+                                    mut result,
+                                    stream_events,
+                                }) => {
                                     if matches!(run.state, RunState::Processing) {
                                         run.capture();
                                     } else {
@@ -453,7 +475,7 @@ impl ServerHandler for InspectorServer {
                                         );
                                     }
                                     let duration_ms = timer.elapsed().as_millis() as u64;
-                                    if let Some(meta_ref) = extract_external_reference(&res) {
+                                    if let Some(meta_ref) = extract_external_reference(&result) {
                                         external_reference = Some(meta_ref);
                                     }
                                     let event = this.build_event(
@@ -462,11 +484,13 @@ impl ServerHandler for InspectorServer {
                                         started_at,
                                         duration_ms,
                                         Some(target_descriptor),
-                                        this.snapshot_result(&res),
+                                        this.snapshot_result(&result),
                                         None,
                                         external_reference.clone(),
                                     );
-                                    if let Err(e) = this.outbox.append(&event) {
+                                    let outbox_result = this.outbox.append(&event);
+                                    let outbox_persisted = outbox_result.is_ok();
+                                    if let Err(e) = outbox_result {
                                         tracing::error!(%run_id, error=%e, "failed to append outbox event");
                                     }
                                     if let Some(ref ext) = external_reference {
@@ -475,7 +499,14 @@ impl ServerHandler for InspectorServer {
                                     if let Some(key) = claimed_key {
                                         this.idempotency.complete(&key, event.clone());
                                     }
-                                    Ok(res)
+                                    let trace = CallTrace {
+                                        event: event.clone(),
+                                        stream_enabled: req.stream,
+                                        stream_events,
+                                        outbox_persisted,
+                                    };
+                                    Self::attach_trace(&mut result, &trace);
+                                    Ok(result)
                                 }
                                 Err(error) => {
                                     run.fail();
@@ -491,7 +522,9 @@ impl ServerHandler for InspectorServer {
                                         Some(message.clone()),
                                         external_reference.clone(),
                                     );
-                                    if let Err(e) = this.outbox.append(&event) {
+                                    let outbox_result = this.outbox.append(&event);
+                                    let outbox_persisted = outbox_result.is_ok();
+                                    if let Err(e) = outbox_result {
                                         tracing::error!(%run_id, error=%e, "failed to append failed event to outbox");
                                     }
                                     if let Some(ref ext) = external_reference {
@@ -500,9 +533,17 @@ impl ServerHandler for InspectorServer {
                                     if let Some(key) = claimed_key {
                                         this.idempotency.complete(&key, event.clone());
                                     }
-                                    Err(CallToolResult::structured_error(json!({
+                                    let mut err_result = CallToolResult::structured_error(json!({
                                         "error": message
-                                    })))
+                                    }));
+                                    let trace = CallTrace {
+                                        event: event.clone(),
+                                        stream_enabled: req.stream,
+                                        stream_events: None,
+                                        outbox_persisted,
+                                    };
+                                    Self::attach_trace(&mut err_result, &trace);
+                                    Err(err_result)
                                 }
                             }
                         }

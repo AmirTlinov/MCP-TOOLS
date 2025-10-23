@@ -107,7 +107,7 @@ pub struct HttpTarget {
     pub handshake_timeout_ms: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct InspectionRunEvent {
     #[schemars(with = "String")]
     pub event_id: uuid::Uuid,
@@ -146,4 +146,13 @@ pub struct StreamEvent {
     pub content: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CallTrace {
+    pub event: InspectionRunEvent,
+    pub stream_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_events: Option<Vec<StreamEvent>>,
+    pub outbox_persisted: bool,
 }

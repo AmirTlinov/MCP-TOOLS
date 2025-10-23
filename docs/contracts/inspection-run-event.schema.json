@@ -77,6 +77,14 @@
     "error": {
       "type": ["string", "null"],
       "description": "Human-readable error message if the run failed."
+    },
+    "idempotency_key": {
+      "type": ["string", "null"],
+      "description": "Idempotency key associated with the downstream call, when provided."
+    },
+    "external_reference": {
+      "type": ["string", "null"],
+      "description": "External reference identifier recorded for deduplication across transports."
     }
   }
 }

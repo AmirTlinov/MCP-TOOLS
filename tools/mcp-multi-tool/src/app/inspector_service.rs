@@ -44,6 +44,28 @@ impl InspectorClient {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CallOutcome {
+    pub result: CallToolResult,
+    pub stream_events: Option<Vec<StreamEvent>>,
+}
+
+impl CallOutcome {
+    fn from_result(result: CallToolResult) -> Self {
+        Self {
+            result,
+            stream_events: None,
+        }
+    }
+
+    fn with_stream(result: CallToolResult, events: Vec<StreamEvent>) -> Self {
+        Self {
+            result,
+            stream_events: Some(events),
+        }
+    }
+}
+
 impl ClientHandler for InspectorClient {
     fn on_progress(
         &self,
@@ -314,7 +336,7 @@ impl InspectorService {
         env: Option<BTreeMap<String, String>>,
         cwd: Option<String>,
         request: &CallRequest,
-    ) -> Result<CallToolResult> {
+    ) -> Result<CallOutcome> {
         let _pending = PendingGaugeGuard::new();
         let mut cmd = Command::new(command);
         cmd.args(args);
@@ -331,11 +353,7 @@ impl InspectorService {
         self.invoke_call(client, request).await
     }
 
-    pub async fn call_sse(
-        &self,
-        target: &SseTarget,
-        request: &CallRequest,
-    ) -> Result<CallToolResult> {
+    pub async fn call_sse(&self, target: &SseTarget, request: &CallRequest) -> Result<CallOutcome> {
         let _pending = PendingGaugeGuard::new();
         let url = target.url.clone();
         if url.is_empty() {
@@ -355,7 +373,7 @@ impl InspectorService {
         &self,
         target: &HttpTarget,
         request: &CallRequest,
-    ) -> Result<CallToolResult> {
+    ) -> Result<CallOutcome> {
         let _pending = PendingGaugeGuard::new();
         let url = target.url.clone();
         if url.is_empty() {
@@ -384,7 +402,7 @@ impl InspectorService {
         &self,
         client: rmcp::service::RunningService<RoleClient, InspectorClient>,
         request: &CallRequest,
-    ) -> Result<CallToolResult> {
+    ) -> Result<CallOutcome> {
         let params = CallToolRequestParam {
             name: request.tool_name.clone().into(),
             arguments: request.arguments_json.as_object().cloned(),
@@ -393,7 +411,7 @@ impl InspectorService {
             self.call_with_stream(client, params).await
         } else {
             let res = client.call_tool(params).await?;
-            Ok(res)
+            Ok(CallOutcome::from_result(res))
         }
     }
 
@@ -401,7 +419,7 @@ impl InspectorService {
         &self,
         client: rmcp::service::RunningService<RoleClient, InspectorClient>,
         params: CallToolRequestParam,
-    ) -> Result<CallToolResult> {
+    ) -> Result<CallOutcome> {
         let dispatcher = client.service().dispatcher();
         let handle = client
             .send_cancellable_request(
@@ -431,13 +449,14 @@ impl InspectorService {
 
         events.push(result_to_event(&final_result));
         let final_snapshot = serde_json::to_value(&final_result).ok();
+        let events_clone = events.clone();
         final_result.structured_content = Some(serde_json::json!({
             "mode": "stream",
-            "events": events,
+            "events": events_clone,
             "final": final_snapshot,
         }));
 
-        Ok(final_result)
+        Ok(CallOutcome::with_stream(final_result, events))
     }
 }
 

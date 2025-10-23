@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/iMAGRAY/MCP-TOOLS/contracts/call-result.schema.json",
   "title": "CallResult",
-  "description": "Structured response emitted by inspector_call when the downstream invocation completes.",
+  "description": "Structured response emitted by inspector_call when the downstream invocation completes. The surrounding MCP envelope exposes CallToolResult._meta.trace following call-trace.schema.json for observability.",
   "type": "object",
   "additionalProperties": false,
   "required": ["content"],

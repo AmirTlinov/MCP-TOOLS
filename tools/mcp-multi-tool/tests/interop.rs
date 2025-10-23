@@ -94,6 +94,17 @@ async fn list_tools_and_help() -> Result<()> {
             arguments: Some(stream_args.as_object().cloned().unwrap()),
         })
         .await?;
+    let stream_trace = stream_resp
+        .meta
+        .as_ref()
+        .and_then(|meta| meta.get("trace"))
+        .expect("stream trace meta");
+    assert!(
+        stream_trace
+            .get("stream_enabled")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+    );
     let stream_payload = stream_resp
         .structured_content
         .expect("stream structured payload");
@@ -116,5 +127,11 @@ async fn list_tools_and_help() -> Result<()> {
             .map(|kind| kind == "final" || kind == "error")
             .unwrap_or(false)
     }));
+    let trace_events = stream_trace
+        .get("stream_events")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(!trace_events.is_empty());
     Ok(())
 }

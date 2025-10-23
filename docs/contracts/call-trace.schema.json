@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iMAGRAY/MCP-TOOLS/contracts/call-trace.schema.json",
+  "title": "CallTrace",
+  "description": "Metadata snapshot emitted inside CallToolResult._meta.trace when inspector_call completes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event", "stream_enabled", "outbox_persisted"],
+  "properties": {
+    "event": {
+      "$ref": "inspection-run-event.schema.json"
+    },
+    "stream_enabled": {
+      "type": "boolean",
+      "description": "Indicates whether streaming mode was enabled for the downstream call."
+    },
+    "stream_events": {
+      "type": ["array", "null"],
+      "description": "Progress notifications captured from the downstream MCP tool when streaming is enabled.",
+      "items": {
+        "$ref": "call-result.schema.json#/$defs/StreamEvent"
+      }
+    },
+    "outbox_persisted": {
+      "type": "boolean",
+      "description": "True when the inspection run event was successfully written to the transactional outbox."
+    }
+  }
+}

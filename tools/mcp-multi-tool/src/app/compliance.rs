@@ -439,13 +439,14 @@ impl ComplianceSuite {
             )
             .await;
         match outcome {
-            Ok(res) => {
-                let passed = res.structured_content.is_some() || !res.content.is_empty();
+            Ok(outcome) => {
+                let result = outcome.result;
+                let passed = result.structured_content.is_some() || !result.content.is_empty();
                 Ok(Some(CaseResult {
                     name: "call_help".into(),
                     passed,
                     duration_ms: timer.elapsed().as_millis() as u64,
-                    detail: self.snapshot(&res),
+                    detail: self.snapshot(&result),
                 }))
             }
             Err(err) => Ok(Some(CaseResult {
@@ -481,13 +482,14 @@ impl ComplianceSuite {
         };
         let outcome = self.svc.call_sse(&sse_target, &request).await;
         Ok(Some(match outcome {
-            Ok(res) => {
-                let passed = res.structured_content.is_some() || !res.content.is_empty();
+            Ok(outcome) => {
+                let result = outcome.result;
+                let passed = result.structured_content.is_some() || !result.content.is_empty();
                 CaseResult {
                     name: "call_help_sse".into(),
                     passed,
                     duration_ms: timer.elapsed().as_millis() as u64,
-                    detail: self.snapshot(&res),
+                    detail: self.snapshot(&result),
                 }
             }
             Err(err) => CaseResult {
@@ -522,13 +524,14 @@ impl ComplianceSuite {
         };
         let outcome = self.svc.call_http(&http_target, &request).await;
         Ok(Some(match outcome {
-            Ok(res) => {
-                let passed = res.structured_content.is_some() || !res.content.is_empty();
+            Ok(outcome) => {
+                let result = outcome.result;
+                let passed = result.structured_content.is_some() || !result.content.is_empty();
                 CaseResult {
                     name: "call_help_http".into(),
                     passed,
                     duration_ms: timer.elapsed().as_millis() as u64,
-                    detail: self.snapshot(&res),
+                    detail: self.snapshot(&result),
                 }
             }
             Err(err) => CaseResult {
@@ -569,8 +572,13 @@ impl ComplianceSuite {
             )
             .await;
         match outcome {
-            Ok(res) => {
-                let payload = res.structured_content.as_ref().cloned().unwrap_or_default();
+            Ok(outcome) => {
+                let result = outcome.result;
+                let payload = result
+                    .structured_content
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_default();
                 let mode = payload
                     .get("mode")
                     .and_then(|v| v.as_str())
@@ -595,7 +603,7 @@ impl ComplianceSuite {
                     detail: Some(json!({
                         "mode": mode,
                         "events": events,
-                        "snapshot": self.snapshot(&res)
+                        "snapshot": self.snapshot(&result)
                     })),
                 }))
             }

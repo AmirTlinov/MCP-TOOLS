@@ -36,6 +36,7 @@ Any MCP-capable agent (Codex CLI, Claude Code, Gemini Code Assist, etc.) can con
 
 - Rapid attach to target MCP servers (stdio / SSE / streamable HTTP) with full `list_tools`, `describe`, `call`, and streaming coverage.
 - Smoketest binary: `cargo run -p mcp_multi_tool --bin smoketest` spins up the server and exercises a happy path.
+- Every `inspector_call` response adds `_meta.trace` capturing the persisted inspection run, streaming progress, and outbox status for deterministic auditing.
 - Integration test `tests/interop.rs` boots the binary and performs remote calls via rmcp APIs.
 
 ## Development Workflow
