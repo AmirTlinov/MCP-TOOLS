@@ -35,7 +35,12 @@ async fn main() -> Result<()> {
     }
 
     let (outbox_main, outbox_dlq) = config.outbox_paths();
-    let outbox = Arc::new(Outbox::new(outbox_main, outbox_dlq)?);
+    let outbox = if let Some(db_path) = config.outbox_db_path() {
+        Outbox::sqlite(db_path, outbox_dlq.clone())?
+    } else {
+        Outbox::file(outbox_main, outbox_dlq.clone())?
+    };
+    let outbox = Arc::new(outbox);
     let idempotency = Arc::new(IdempotencyStore::new());
     {
         let store = idempotency.clone();

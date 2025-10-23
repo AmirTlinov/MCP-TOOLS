@@ -27,7 +27,7 @@
 
 ## Side-Effect Strategy
 - Execute remote tool calls through the app layer, producing `CallToolResult` while tracking `InspectionRun` invariants.
-- Outbox (file-based) stores DLQ events (`data/outbox/dlq.jsonl`) via `infra::outbox::Outbox`. The `infra` module will own durable outbox wiring in future milestones.
+- Outbox persists events to sqlite when `OUTBOX_DB_PATH` is set (and mirrors into JSONL DLQ for backup) via `infra::outbox::Outbox`.
 - Each effect path obeys `CLAIM|OUTBOX`: claim run, perform effect, persist event if downstream is unavailable.
 
 ## Metrics Flow
@@ -41,4 +41,4 @@
 
 ## Future Hooks
 - Add SSE/HTTP clients under `app::inspector_service` as feature flags mature.
-- Promote file-based outbox to a durable backend with replay worker.
+- Introduce a replay worker that publishes sqlite-backed outbox events to external sinks with exactly-once guarantees.

@@ -9,6 +9,7 @@ pub struct AppConfig {
     pub allow_insecure_metrics_dev: Option<bool>,
     pub outbox_path: Option<String>,
     pub outbox_dlq_path: Option<String>,
+    pub outbox_db_path: Option<String>,
     #[serde(default)]
     pub idempotency_conflict_policy: IdempotencyConflictPolicy,
 }
@@ -21,6 +22,7 @@ impl AppConfig {
             .and_then(|v| v.parse::<bool>().ok());
         let outbox_path = std::env::var("OUTBOX_PATH").ok();
         let outbox_dlq_path = std::env::var("OUTBOX_DLQ_PATH").ok();
+        let outbox_db_path = std::env::var("OUTBOX_DB_PATH").ok();
         let idempotency_conflict_policy = std::env::var("IDEMPOTENCY_CONFLICT_POLICY")
             .ok()
             .and_then(|raw| IdempotencyConflictPolicy::from_str(&raw).ok())
@@ -30,6 +32,7 @@ impl AppConfig {
             allow_insecure_metrics_dev,
             outbox_path,
             outbox_dlq_path,
+            outbox_db_path,
             idempotency_conflict_policy,
         }
     }
@@ -44,6 +47,12 @@ impl AppConfig {
             .as_deref()
             .unwrap_or("data/outbox/dlq.jsonl");
         (PathBuf::from(main), PathBuf::from(dlq))
+    }
+
+    pub fn outbox_db_path(&self) -> Option<PathBuf> {
+        self.outbox_db_path
+            .as_deref()
+            .map(|path| PathBuf::from(path))
     }
 }
 

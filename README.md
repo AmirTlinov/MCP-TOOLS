@@ -65,6 +65,12 @@ Tagged commits (`v*`) trigger `.github/workflows/release.yml`, producing binarie
 
 `cargo run --release -p mcp_multi_tool --bin compliance -- --command <target>` spawns a target MCP stdio server, runs probe/list/call checks, and emits a JSON report (exit code 1 if pass rate <95%). Combine with `--output-json` / `--output-md` for archival.
 
+## Configuration Highlights
+
+- `OUTBOX_DB_PATH` switches the outbox to a durable sqlite store (falls back to JSONL when unset).
+- `OUTBOX_PATH` and `OUTBOX_DLQ_PATH` remain append-only exports for observability and recovery.
+- `IDEMPOTENCY_CONFLICT_POLICY` toggles duplicate behaviour (`return_existing` vs `409`).
+
 ## License
 
 This project is released under [The Unlicense](LICENSE). You can use it for any purpose with no restrictions.
