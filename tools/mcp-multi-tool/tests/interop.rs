@@ -5,7 +5,7 @@ use rmcp::{
     model::CallToolRequestParam,
     transport::child_process::{ConfigureCommandExt, TokioChildProcess},
 };
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::process::Command;
 
 #[tokio::test]
@@ -27,7 +27,26 @@ async fn list_tools_and_help() -> Result<()> {
             arguments: None,
         })
         .await?;
-    assert!(help.structured_content.is_some());
+    let help_payload = help.structured_content.expect("help structured content");
+    assert_eq!(
+        help_payload
+            .get("format")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default(),
+        "jsonl"
+    );
+    let lines = help_payload
+        .get("lines")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(!lines.is_empty());
+    let summary: Value =
+        serde_json::from_str(lines[0].as_str().expect("jsonl summary line string"))?;
+    assert_eq!(
+        summary.get("section").and_then(Value::as_str),
+        Some("summary")
+    );
 
     let mock = cargo_bin("mock_mcp_server");
     let list_args = json!({

@@ -192,124 +192,115 @@ impl ServerHandler for InspectorServer {
 
             let result: Result<CallToolResult, CallToolResult> = match name {
                 "help" | "inspector_help" => {
-                    let spec = serde_json::json!({
-                      "server": {
-                        "name": "mcp-multi-tool",
-                        "version": env!("CARGO_PKG_VERSION"),
-                        "protocol": "MCP",
-                        "transport": "stdio"
-                      },
-                      "tldr": [
-                        "1) help -> review examples",
-                        "2) inspector_probe (stdio|sse|http)",
-                        "3) inspector_list_tools (multi-transport)",
-                        "4) inspector_describe (schemas & annotations)",
-                        "5) inspector_call (stdio|sse|http)"
-                      ],
-                      "quick_start": [
-                        {"tool":"inspector_probe","arguments":{"transport":"stdio","command":"uvx","args":["mcp-server-git"]},"expect":{"ok":true}},
-                        {"tool":"inspector_list_tools","arguments":{"transport":"stdio","command":"uvx","args":["mcp-server-git"]},"expect":{"tools_min":1}},
-                        {"tool":"inspector_call","arguments":{"tool_name":"help","arguments_json":{},"stream":true,"stdio":{"command":"uvx","args":["mcp-server-git"]}},"expect":{"mode":"stream"}},
-                        {"tool":"inspector_describe","arguments":{"tool_name":"help","transport":"stdio","command":"uvx","args":["mcp-server-git"]},"expect":{"name":"help"}},
-                        {"tool":"inspector_call","env":{"INSPECTOR_STDIO_CMD":"uvx mcp-server-git"},"arguments":{"tool_name":"git_status","arguments_json":{"repo_path":"."}},"expect":{"structured_or_text":true}}
-                      ],
-                      "constraints": {
-                        "inspector_probe": {"transports":["Stdio","Sse","Http"]},
-                        "inspector_list_tools": {"transports":["Stdio","Sse","Http"]},
-                        "inspector_describe": {"transports":["Stdio","Sse","Http"]},
-                        "inspector_call": {"transports":["Stdio","Sse","Http"]}
-                      },
-                      "env": {
-                        "INSPECTOR_STDIO_CMD": {
-                          "required_for": ["inspector_list_tools","inspector_describe","inspector_call"],
-                          "format": "<command> [args...]",
-                          "examples": {
-                            "linux_macos_bash": "export INSPECTOR_STDIO_CMD='uvx mcp-server-git'",
-                            "windows_powershell": "$Env:INSPECTOR_STDIO_CMD='uvx mcp-server-git'"
-                          }
-                        },
-                        "RUST_LOG": {"default": "info"}
-                      },
-                      "tools": {
-                        "help": {
-                          "purpose": "Return this reference manual.",
-                          "params_table": [],
-                          "returns": {"type": "object", "description": "Structured reference payload"}
-                        },
-                        "inspector_probe": {
-                          "purpose": "Check connectivity to a target MCP and capture version/latency.",
-                          "params_table": [
-                            {"name":"transport","type":"enum(stdio|sse|http)","required":false,"default":"stdio","desc":"Target transport (lowercase values)"},
-                            {"name":"command","type":"string","required":false,"default":null,"desc":"Executable for the stdio server"},
-                            {"name":"args","type":"array<string>","required":false,"default":[],"desc":"Process arguments"},
-                            {"name":"env","type":"map<string,string>","required":false,"default":null,"desc":"Environment variables for the process"},
-                            {"name":"cwd","type":"string","required":false,"default":null,"desc":"Working directory"},
-                            {"name":"url","type":"string","required":false,"default":null,"desc":"SSE/HTTP endpoint"},
-                            {"name":"headers","type":"map<string,string>","required":false,"default":null,"desc":"Headers for SSE/HTTP transports"},
-                            {"name":"auth_token","type":"string","required":false,"default":null,"desc":"Bearer token for HTTP"},
-                            {"name":"handshake_timeout_ms","type":"integer","required":false,"default":15000,"desc":"Handshake timeout in milliseconds"}
-                          ],
-                          "returns": {"ok":"bool","transport":"string","server_name":"string|null","version":"string|null","latency_ms":"integer|null","error":"string|null"}
-                        },
-                        "inspector_list_tools": {
-                          "purpose": "List tools exposed by the target MCP over stdio/SSE/HTTP.",
-                          "params_table": [
-                            {"name":"transport","type":"enum(stdio|sse|http)","required":false,"default":"stdio","desc":"Target transport (lowercase values)"},
-                            {"name":"command","type":"string","required":false,"default":null,"desc":"Target stdio server process"},
-                            {"name":"args","type":"array<string>","required":false,"default":[],"desc":"Process arguments"},
-                            {"name":"env","type":"map<string,string>","required":false,"default":null,"desc":"Environment variables"},
-                            {"name":"cwd","type":"string","required":false,"default":null,"desc":"Working directory"},
-                            {"name":"url","type":"string","required":false,"default":null,"desc":"SSE/HTTP endpoint"},
-                            {"name":"headers","type":"map<string,string>","required":false,"default":null,"desc":"Headers for SSE/HTTP"},
-                            {"name":"auth_token","type":"string","required":false,"default":null,"desc":"Bearer token for HTTP"},
-                            {"name":"handshake_timeout_ms","type":"integer","required":false,"default":15000,"desc":"Handshake timeout in milliseconds"}
-                          ],
-                          "returns": {"tools":"array<Tool>"}
-                        },
-                        "inspector_describe": {
-                          "purpose": "Retrieve schema and annotations for a target tool.",
-                          "params_table": [
-                            {"name":"tool_name","type":"string","required":true,"default":null,"desc":"Tool name to describe"},
-                            {"name":"transport","type":"enum(stdio|sse|http)","required":false,"default":"stdio","desc":"Target transport"},
-                            {"name":"command","type":"string","required":false,"default":null,"desc":"Target stdio server process"},
-                            {"name":"args","type":"array<string>","required":false,"default":[],"desc":"Process arguments"},
-                            {"name":"env","type":"map<string,string>","required":false,"default":null,"desc":"Environment variables"},
-                            {"name":"cwd","type":"string","required":false,"default":null,"desc":"Working directory"},
-                            {"name":"url","type":"string","required":false,"default":null,"desc":"SSE/HTTP endpoint"},
-                            {"name":"headers","type":"map<string,string>","required":false,"default":null,"desc":"Headers for SSE/HTTP"},
-                            {"name":"auth_token","type":"string","required":false,"default":null,"desc":"Bearer token for HTTP"},
-                            {"name":"handshake_timeout_ms","type":"integer","required":false,"default":15000,"desc":"Handshake timeout in milliseconds"}
-                          ],
-                          "returns": {"tool":"Tool"}
-                        },
-                        "inspector_call": {
-                          "purpose": "Invoke a tool on the target MCP over stdio/SSE/HTTP.",
-                          "params_table": [
-                            {"name":"tool_name","type":"string","required":true,"default":null,"desc":"Tool name on the target server"},
-                            {"name":"arguments_json","type":"object","required":true,"default":{},"desc":"Tool arguments"},
-                            {"name":"stream","type":"boolean","required":false,"default":false,"desc":"Enable streaming mode to capture progress chunks plus final payload"},
-                            {"name":"stdio","type":"object","required":false,"default":null,"desc":"Override stdio target: {command,args,env?,cwd?}"},
-                            {"name":"sse","type":"object","required":false,"default":null,"desc":"SSE override: {url,headers?,handshake_timeout_ms?}"},
-                            {"name":"http","type":"object","required":false,"default":null,"desc":"HTTP override: {url,headers?,auth_token?,handshake_timeout_ms?}"}
-                          ],
-                          "preconditions": ["Provide one of stdio/sse/http overrides or configure INSPECTOR_STDIO_CMD env"],
-                          "returns": {"content":"array<Content>","structured_content":"object|null"}
-                        }
-                      },
-                      "notes": {
-                        "http_auth": "HTTP transport accepts Bearer tokens via ProbeRequest.auth_token.",
-                        "sse_auth": "rmcp 0.8.1 lacks public support for SSE tokens; use HTTP transport if auth is required.",
-                        "streaming": "Set 'stream': true to receive progress chunks ('event' = 'chunk') followed by a final event in the structured payload."
-                      },
-                      "errors": [
-                        {"code":"MISSING_COMMAND","tool":"inspector_list_tools","reason":"command was not provided for stdio","action":"Pass command (and args if needed) or set INSPECTOR_STDIO_CMD"},
-                        {"code":"MISSING_COMMAND","tool":"inspector_describe","reason":"command was not provided for stdio","action":"Pass command (and args if needed) or set INSPECTOR_STDIO_CMD"},
-                        {"code":"MISSING_STDIO_CMD","tool":"inspector_call","reason":"INSPECTOR_STDIO_CMD not set","action":"Export the environment variable or provide stdio override"},
-                        {"code":"UNKNOWN_TOOL","tool":"*","reason":"Requested tool is not registered","action":"Use help or inspector_list_tools"},
-                        {"code":"ERROR_BUDGET_EXHAUSTED","tool":"inspector_call","reason":"Recent failure rate breached the error budget","action":"Wait for freeze window or reduce downstream errors"}
-                      ]
+                    let lines = vec![
+                        serde_json::json!({
+                            "section": "summary",
+                            "server": "mcp-multi-tool",
+                            "version": env!("CARGO_PKG_VERSION"),
+                            "protocol": "MCP",
+                            "transports": ["stdio", "sse", "http"]
+                        }),
+                        serde_json::json!({
+                            "section": "tool",
+                            "name": "inspector_probe",
+                            "summary": "Probe a downstream MCP server and measure latency.",
+                            "arguments": {
+                                "transport": "string stdio|sse|http",
+                                "command": "optional string",
+                                "args": "optional array<string>",
+                                "env": "optional map",
+                                "cwd": "optional string",
+                                "url": "optional string",
+                                "headers": "optional map",
+                                "auth_token": "optional string",
+                                "handshake_timeout_ms": "optional int"
+                            },
+                            "returns": "ProbeResult"
+                        }),
+                        serde_json::json!({
+                            "section": "tool",
+                            "name": "inspector_list_tools",
+                            "summary": "List tools exposed by the target MCP.",
+                            "arguments": {
+                                "transport": "string stdio|sse|http",
+                                "command": "optional string",
+                                "args": "optional array<string>",
+                                "env": "optional map",
+                                "cwd": "optional string",
+                                "url": "optional string",
+                                "headers": "optional map",
+                                "auth_token": "optional string",
+                                "handshake_timeout_ms": "optional int"
+                            },
+                            "returns": "array<Tool>"
+                        }),
+                        serde_json::json!({
+                            "section": "tool",
+                            "name": "inspector_describe",
+                            "summary": "Fetch JSON schema and annotations for a tool.",
+                            "arguments": {
+                                "tool_name": "string",
+                                "transport": "optional string",
+                                "command": "optional string",
+                                "args": "optional array<string>",
+                                "env": "optional map",
+                                "cwd": "optional string",
+                                "url": "optional string",
+                                "headers": "optional map",
+                                "auth_token": "optional string",
+                                "handshake_timeout_ms": "optional int"
+                            },
+                            "returns": "Tool"
+                        }),
+                        serde_json::json!({
+                            "section": "tool",
+                            "name": "inspector_call",
+                            "summary": "Invoke a downstream tool with optional streaming.",
+                            "arguments": {
+                                "tool_name": "string",
+                                "arguments_json": "object",
+                                "idempotency_key": "optional string",
+                                "external_reference": "optional string",
+                                "stream": "boolean",
+                                "stdio": "optional target",
+                                "sse": "optional target",
+                                "http": "optional target"
+                            },
+                            "returns": "CallToolResult",
+                            "notes": [
+                                "Set stream=true to capture progress notifications.",
+                                "When the error budget is exhausted the server returns ERROR_BUDGET_EXHAUSTED until the success rate recovers."
+                            ]
+                        }),
+                        serde_json::json!({
+                            "section": "environment",
+                            "INSPECTOR_STDIO_CMD": "<command> [args...] required when no stdio target override is provided",
+                            "ERROR_BUDGET_*": "tune freeze threshold (see docs/howto/onboarding.md)",
+                            "RUST_LOG": "default info"
+                        }),
+                        serde_json::json!({
+                            "section": "workflow",
+                            "steps": [
+                                "inspector_probe",
+                                "inspector_list_tools",
+                                "inspector_describe",
+                                "inspector_call"
+                            ],
+                            "diagnostics": [
+                                "Prometheus /metrics -> inspector_lock_wait_ms histogram",
+                                "Outbox JSONL/SQLite at data/outbox"
+                            ]
+                        }),
+                    ];
+
+                    let payload = serde_json::json!({
+                        "format": "jsonl",
+                        "lines": lines
+                            .into_iter()
+                            .map(|entry| serde_json::to_string(&entry).unwrap())
+                            .collect::<Vec<_>>()
                     });
-                    Ok(CallToolResult::structured(spec))
+                    Ok(CallToolResult::structured(payload))
                 }
                 // New names without dots (Codex-safe)
                 "inspector_probe" | "inspector.probe" => {
