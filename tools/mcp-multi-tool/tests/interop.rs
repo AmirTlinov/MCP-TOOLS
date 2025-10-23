@@ -9,7 +9,7 @@ use tokio::process::Command;
 
 #[tokio::test]
 async fn list_tools_and_help() -> Result<()> {
-    let bin = cargo_bin("mcp_inspector");
+    let bin = cargo_bin("mcp-multi-tool");
     println!("using binary: {}", bin.display());
     let service = ()
         .serve(TokioChildProcess::new(Command::new(&bin).configure(|c| {

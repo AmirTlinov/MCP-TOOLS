@@ -14,7 +14,7 @@ async fn main() -> Result<()> {
     } else {
         "release"
     };
-    let server_bin = format!("{}/{}/mcp_inspector", target_dir, profile);
+    let server_bin = format!("{}/{}/mcp-multi-tool", target_dir, profile);
 
     let service = ()
         .serve(TokioChildProcess::new(

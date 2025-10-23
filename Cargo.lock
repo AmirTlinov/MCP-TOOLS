@@ -860,7 +860,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 
 [[package]]
-name = "mcp_inspector"
+name = "mcp_multi_tool"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1327,9 +1327,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "0.8.2"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e35d31f89beb59c83bc31363426da25b323ce0c2e5b53c7bf29867d16ee7898"
+checksum = "6f35acda8f89fca5fd8c96cae3c6d5b4c38ea0072df4c8030915f3b5ff469c1c"
 dependencies = [
  "base64",
  "chrono",

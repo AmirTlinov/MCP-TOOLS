@@ -1,7 +1,7 @@
 # Plan.md — MCP Stdio Server + MCP Inspector (Rust, rmcp 0.8.1)
 
 ## 1) Executive Summary
-- Цель: единый Rust-бинарник MCP stdio сервера с инструментом mcp_inspector для когнитивно лёгкого тестирования любых MCP‑серверов (stdio/SSE/HTTP).
+- Цель: единый Rust-бинарник MCP stdio сервера с инструментом MCP MultiTool для когнитивно лёгкого тестирования любых MCP‑серверов (stdio/SSE/HTTP).
 - Архитектура: Modular Monolith (DDD, Ports & Adapters), публичный MCP-интерфейс без флагов; конфиг только через `config/` и ENV.
 - MVP: инспекция целевого MCP — подключение, список инструментов, описание, вызовы, стриминг, комплаенс‑сьют, метрики, отчёт.
 - Качество: покрытие ≥85% (Statements/Lines), SLO p99 ≤200мс, ExactlyOnce ratio 1.00±0.01, без циклов зависимостей.
@@ -75,7 +75,7 @@ id: T-0001
 title: Создать каркас проекта (workspace + crate)  
 outcome: Репозиторий с каркасом, сборка проходит  
 inputs: [AGENTS.md, требования]  
-outputs: [workspace `Cargo.toml`, crate `mcp_inspector`]  
+outputs: [workspace `Cargo.toml`, crate `mcp_multi_tool`]  
 procedure:
   - Инициализировать workspace и бинарный crate.
   - Подключить базовые зависимости (`anyhow`, `tracing`).  
@@ -1093,4 +1093,3 @@ T-0038 | Арх‑тесты | WS-007 | 5h | QA | 0 циклов | Planned
 1) Зафиксировать план и роли (RACI), подтвердить сроки M‑вех.  
 2) Старт T‑0001/0002/0005: каркас + rmcp + stdio‑скелет.  
 3) Реализовать T‑0010 probe и T‑0023 mock для ранних E2E.
-
