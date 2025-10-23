@@ -1,17 +1,22 @@
 use anyhow::Result;
 use serde::Serialize;
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, time::Instant};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
 use time::OffsetDateTime;
+use tokio::time::sleep;
 
 use crate::{
     app::inspector_service::InspectorService,
-    shared::types::{ProbeRequest, TargetTransportKind},
+    shared::types::{HttpTarget, ProbeRequest, SseTarget, TargetTransportKind},
 };
 
 #[derive(Clone, Debug, Serialize, Default)]
 pub struct ComplianceTarget {
-    pub command: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -31,7 +36,7 @@ pub struct ComplianceTarget {
 impl ComplianceTarget {
     pub fn stdio<S: Into<String>>(command: S) -> Self {
         Self {
-            command: command.into(),
+            command: Some(command.into()),
             ..Default::default()
         }
     }
@@ -104,9 +109,30 @@ impl ComplianceSuite {
         let started_at = OffsetDateTime::now_utc();
         let mut cases = Vec::new();
 
-        cases.push(self.probe_case(&target).await?);
-        cases.push(self.list_tools_case(&target).await?);
-        cases.push(self.help_case(&target).await?);
+        if let Some(case) = self.probe_stdio_case(&target).await? {
+            cases.push(case);
+        }
+        if let Some(case) = self.list_tools_stdio_case(&target).await? {
+            cases.push(case);
+        }
+        if let Some(case) = self.list_tools_sse_case(&target).await? {
+            cases.push(case);
+        }
+        if let Some(case) = self.list_tools_http_case(&target).await? {
+            cases.push(case);
+        }
+        if target.sse_url.is_some() || target.http_url.is_some() {
+            sleep(Duration::from_millis(200)).await;
+        }
+        if let Some(case) = self.call_stdio_case(&target).await? {
+            cases.push(case);
+        }
+        if let Some(case) = self.call_sse_case(&target).await? {
+            cases.push(case);
+        }
+        if let Some(case) = self.call_http_case(&target).await? {
+            cases.push(case);
+        }
         if let Some(sse_case) = self.probe_sse_case(&target).await? {
             cases.push(sse_case);
         }
@@ -128,11 +154,14 @@ impl ComplianceSuite {
         })
     }
 
-    async fn probe_case(&self, target: &ComplianceTarget) -> Result<CaseResult> {
+    async fn probe_stdio_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {
+        let Some(command) = target.command.as_ref() else {
+            return Ok(None);
+        };
         let timer = Instant::now();
         let req = ProbeRequest {
             transport: Some(TargetTransportKind::Stdio),
-            command: Some(target.command.clone()),
+            command: Some(command.clone()),
             args: Some(target.args.clone()),
             env: target.env.clone(),
             cwd: target.cwd.clone(),
@@ -144,7 +173,7 @@ impl ComplianceSuite {
         match self.svc.probe(req).await {
             Ok(res) => {
                 let passed = res.ok;
-                Ok(CaseResult {
+                Ok(Some(CaseResult {
                     name: "probe_stdio".into(),
                     passed,
                     duration_ms: timer.elapsed().as_millis() as u64,
@@ -154,25 +183,28 @@ impl ComplianceSuite {
                         "latency_ms": res.latency_ms,
                         "error": res.error,
                     })),
-                })
+                }))
             }
-            Err(err) => Ok(CaseResult {
+            Err(err) => Ok(Some(CaseResult {
                 name: "probe_stdio".into(),
                 passed: false,
                 duration_ms: timer.elapsed().as_millis() as u64,
                 detail: Some(json!({
                     "error": err.to_string()
                 })),
-            }),
+            })),
         }
     }
 
-    async fn list_tools_case(&self, target: &ComplianceTarget) -> Result<CaseResult> {
+    async fn list_tools_stdio_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {
+        let Some(command) = target.command.as_ref() else {
+            return Ok(None);
+        };
         let timer = Instant::now();
         let outcome = self
             .svc
             .list_tools_stdio(
-                target.command.clone(),
+                command.clone(),
                 target.args.clone(),
                 target.env.clone(),
                 target.cwd.clone(),
@@ -181,32 +213,96 @@ impl ComplianceSuite {
         match outcome {
             Ok(tools) => {
                 let passed = !tools.is_empty();
-                Ok(CaseResult {
+                Ok(Some(CaseResult {
                     name: "list_tools".into(),
                     passed,
                     duration_ms: timer.elapsed().as_millis() as u64,
                     detail: Some(json!({
                         "tool_count": tools.len(),
                     })),
-                })
+                }))
             }
-            Err(err) => Ok(CaseResult {
+            Err(err) => Ok(Some(CaseResult {
                 name: "list_tools".into(),
                 passed: false,
                 duration_ms: timer.elapsed().as_millis() as u64,
                 detail: Some(json!({
                     "error": err.to_string()
                 })),
-            }),
+            })),
         }
     }
 
-    async fn help_case(&self, target: &ComplianceTarget) -> Result<CaseResult> {
+    async fn list_tools_sse_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {
+        let Some(url) = target.sse_url.clone() else {
+            return Ok(None);
+        };
+        let timer = Instant::now();
+        let sse_target = SseTarget {
+            url: url.clone(),
+            headers: None,
+            handshake_timeout_ms: Some(15_000),
+        };
+        let outcome = self.svc.list_tools_sse(&sse_target).await;
+        Ok(Some(match outcome {
+            Ok(tools) => CaseResult {
+                name: "list_tools_sse".into(),
+                passed: !tools.is_empty(),
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({
+                    "url": url,
+                    "tool_count": tools.len(),
+                })),
+            },
+            Err(err) => CaseResult {
+                name: "list_tools_sse".into(),
+                passed: false,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({"error": err.to_string()})),
+            },
+        }))
+    }
+
+    async fn list_tools_http_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {
+        let Some(url) = target.http_url.clone() else {
+            return Ok(None);
+        };
+        let timer = Instant::now();
+        let http_target = HttpTarget {
+            url: url.clone(),
+            headers: target.http_headers.clone(),
+            auth_token: target.http_auth_token.clone(),
+            handshake_timeout_ms: Some(15_000),
+        };
+        let outcome = self.svc.list_tools_http(&http_target).await;
+        Ok(Some(match outcome {
+            Ok(tools) => CaseResult {
+                name: "list_tools_http".into(),
+                passed: !tools.is_empty(),
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({
+                    "url": url,
+                    "tool_count": tools.len(),
+                })),
+            },
+            Err(err) => CaseResult {
+                name: "list_tools_http".into(),
+                passed: false,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({"error": err.to_string()})),
+            },
+        }))
+    }
+
+    async fn call_stdio_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {
+        let Some(command) = target.command.as_ref() else {
+            return Ok(None);
+        };
         let timer = Instant::now();
         let outcome = self
             .svc
             .call_stdio(
-                target.command.clone(),
+                command.clone(),
                 target.args.clone(),
                 target.env.clone(),
                 target.cwd.clone(),
@@ -217,22 +313,89 @@ impl ComplianceSuite {
         match outcome {
             Ok(res) => {
                 let passed = res.structured_content.is_some() || !res.content.is_empty();
-                Ok(CaseResult {
+                Ok(Some(CaseResult {
                     name: "call_help".into(),
                     passed,
                     duration_ms: timer.elapsed().as_millis() as u64,
                     detail: self.snapshot(&res),
-                })
+                }))
             }
-            Err(err) => Ok(CaseResult {
+            Err(err) => Ok(Some(CaseResult {
                 name: "call_help".into(),
                 passed: false,
                 duration_ms: timer.elapsed().as_millis() as u64,
                 detail: Some(json!({
                     "error": err.to_string()
                 })),
-            }),
+            })),
         }
+    }
+
+    async fn call_sse_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {
+        let Some(url) = target.sse_url.clone() else {
+            return Ok(None);
+        };
+        let timer = Instant::now();
+        let sse_target = SseTarget {
+            url: url.clone(),
+            headers: None,
+            handshake_timeout_ms: Some(15_000),
+        };
+        let outcome = self
+            .svc
+            .call_sse(&sse_target, "help".into(), json!({}))
+            .await;
+        Ok(Some(match outcome {
+            Ok(res) => {
+                let passed = res.structured_content.is_some() || !res.content.is_empty();
+                CaseResult {
+                    name: "call_help_sse".into(),
+                    passed,
+                    duration_ms: timer.elapsed().as_millis() as u64,
+                    detail: self.snapshot(&res),
+                }
+            }
+            Err(err) => CaseResult {
+                name: "call_help_sse".into(),
+                passed: false,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({"error": err.to_string()})),
+            },
+        }))
+    }
+
+    async fn call_http_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {
+        let Some(url) = target.http_url.clone() else {
+            return Ok(None);
+        };
+        let timer = Instant::now();
+        let http_target = HttpTarget {
+            url: url.clone(),
+            headers: target.http_headers.clone(),
+            auth_token: target.http_auth_token.clone(),
+            handshake_timeout_ms: Some(15_000),
+        };
+        let outcome = self
+            .svc
+            .call_http(&http_target, "help".into(), json!({}))
+            .await;
+        Ok(Some(match outcome {
+            Ok(res) => {
+                let passed = res.structured_content.is_some() || !res.content.is_empty();
+                CaseResult {
+                    name: "call_help_http".into(),
+                    passed,
+                    duration_ms: timer.elapsed().as_millis() as u64,
+                    detail: self.snapshot(&res),
+                }
+            }
+            Err(err) => CaseResult {
+                name: "call_help_http".into(),
+                passed: false,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({"error": err.to_string()})),
+            },
+        }))
     }
 
     async fn probe_sse_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {

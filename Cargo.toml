@@ -1,5 +1,6 @@
 [workspace]
 members = [
-    "tools/mcp-multi-tool"
+    "tools/mcp-multi-tool",
+    "tools/mock-mcp-server"
 ]
 resolver = "3"

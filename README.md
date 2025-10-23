@@ -63,7 +63,7 @@ Tagged commits (`v*`) trigger `.github/workflows/release.yml`, producing binarie
 
 ## Compliance Suite
 
-`cargo run --release -p mcp_multi_tool --bin compliance -- --command <target>` spawns a target MCP stdio server, runs probe/list/call checks, and emits a JSON report (exit code 1 if pass rate <95%). Combine with `--output-json` / `--output-md` for archival.
+`cargo run --release -p mcp_multi_tool --bin compliance -- --command <target>` spawns a target MCP stdio server, runs probe/list/call checks, and emits a JSON report (exit code 1 if pass rate <95%). Combine with `--output-json` / `--output-md` for archival. Omit `--command` to skip stdio cases (useful when inspecting standalone SSE/HTTP endpoints).
 Optional flags `--sse-url` and `--http-url` let you probe additional transports; `--http-header KEY=VALUE` and `--http-auth-token` decorate HTTP requests for secured targets.
 
 ## Configuration Highlights

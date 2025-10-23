@@ -12,14 +12,14 @@ Format: `<ID> — <concise action> — DoD`. Every item maps to a T-ID.
 - [x] T-0002 — Pin `rmcp = 0.8.1` and required features — DoD: `cargo tree` stable; `Cargo.lock` updated.
 - [x] T-0003 — Domain `InspectionRun` (STATE_MACHINE) — DoD: state transition tests green.
 - [ ] T-0004 — Config via ENV/`config/` — DoD: config unit tests cover precedence.
-- [ ] T-0005 — Stdio MCP server handshake — DoD: integration handshake test green.
-- [ ] T-0006 — Tool registry and manifest — DoD: `list_tools` returns registered tools.
+- [x] T-0005 — Stdio MCP server handshake — DoD: integration handshake test green.
+- [x] T-0006 — Tool registry and manifest — DoD: `list_tools` returns registered tools.
 
 ## 2. Target MCP Clients (WS-002)
-- [ ] T-0007 — Stdio client (spawn + pipes) — DoD: E2E against mock passes.
-- [ ] T-0008 — SSE client (subscription/reconnect) — DoD: reconnect <5s.
-- [ ] T-0009 — Streamable HTTP client — DoD: chunk assembly without leaks.
-- [ ] T-0010 — Probe (connect/version/latency) — DoD: returns version/latency/transport.
+- [x] T-0007 — Stdio client (spawn + pipes) — DoD: E2E against mock passes.
+- [x] T-0008 — SSE client (subscription/reconnect) — DoD: reconnect <5s.
+- [x] T-0009 — Streamable HTTP client — DoD: chunk assembly without leaks.
+- [x] T-0010 — Probe (connect/version/latency) — DoD: returns version/latency/transport.
 
 ## 3. Inspector Core Operations (WS-003)
 - [ ] T-0011 — `inspector.list_tools` — DoD: matches mock baseline.
@@ -48,7 +48,7 @@ Format: `<ID> — <concise action> — DoD`. Every item maps to a T-ID.
 
 ## 7. Quality Gates (WS-007)
 - [x] T-0022 — CI coverage gate 85% — DoD: pipeline fails under threshold.
-- [ ] T-0023 — Mock MCP server — DoD: E2E harness ready.
+- [x] T-0023 — Mock MCP server — DoD: E2E harness ready.
 - [ ] T-0024 — Property tests for idempotency — DoD: 3×100 seeds stable.
 - [ ] T-0025 — Race tests — DoD: lock wait p99 ≤50ms.
 - [ ] T-0026 — Crash/edge harness — DoD: zero panics across runs.

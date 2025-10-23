@@ -13,7 +13,7 @@ use mcp_multi_tool::app::compliance::{ComplianceSuite, ComplianceTarget};
 struct Args {
     /// Command to launch the target stdio MCP server
     #[arg(long)]
-    command: String,
+    command: Option<String>,
 
     /// Arguments passed to the target command (repeat flag for multiple entries)
     #[arg(long)]
