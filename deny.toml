@@ -1,0 +1,14 @@
+[advisories]
+denied = []
+ignore = []
+
+[bans]
+multiple-versions = "deny"
+
+[licenses]
+allow = ["Apache-2.0", "MIT", "BSD-3-Clause", "BSD-2-Clause", "ISC", "Unlicense", "MPL-2.0", "Unicode-3.0", "Zlib", "CC0-1.0"]
+confidence-threshold = 0.8
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

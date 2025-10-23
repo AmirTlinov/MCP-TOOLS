@@ -1,5 +1,6 @@
 use rmcp::schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct EmptyArgs {}
@@ -57,4 +58,33 @@ pub struct StdioTarget {
     pub env: Option<std::collections::BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+pub struct TargetDescriptor {
+    pub transport: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct InspectionRunEvent {
+    #[schemars(with = "String")]
+    pub event_id: uuid::Uuid,
+    #[schemars(with = "String")]
+    pub run_id: uuid::Uuid,
+    pub tool_name: String,
+    pub state: String,
+    pub started_at: String,
+    pub duration_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<TargetDescriptor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }

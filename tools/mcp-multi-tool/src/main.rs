@@ -1,16 +1,13 @@
-mod adapters;
-mod app;
-mod domain;
-mod infra;
-mod shared;
-
-use crate::{
-    adapters::server::InspectorServer,
-    infra::{config::AppConfig, metrics},
-};
 use anyhow::Result;
+use mcp_multi_tool::{
+    adapters::server::InspectorServer,
+    app::{inspector_service::InspectorService, registry::ToolRegistry},
+    infra::{config::AppConfig, metrics, outbox::Outbox},
+    shared::idempotency::IdempotencyStore,
+};
 use rmcp::{ServiceExt, transport::stdio};
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc, time::Duration};
+use tokio::time::sleep;
 use tracing_subscriber::{EnvFilter, fmt};
 
 #[tokio::main]
@@ -37,7 +34,28 @@ async fn main() -> Result<()> {
         }
     }
 
-    let handler = InspectorServer::new();
+    let (outbox_main, outbox_dlq) = config.outbox_paths();
+    let outbox = Arc::new(Outbox::new(outbox_main, outbox_dlq)?);
+    let idempotency = Arc::new(IdempotencyStore::new());
+    {
+        let store = idempotency.clone();
+        tokio::spawn(async move {
+            let ttl = Duration::from_secs(60);
+            let cadence = Duration::from_secs(30);
+            loop {
+                sleep(cadence).await;
+                store.reap_expired(ttl);
+            }
+        });
+    }
+
+    let handler = InspectorServer::new(
+        InspectorService::new(),
+        ToolRegistry::default(),
+        outbox,
+        idempotency,
+        config.idempotency_conflict_policy,
+    );
     // Start the server. Emit tools/list_changed inside on_initialized so
     // the notification is not lost before the handshake completes.
     let server = handler.serve(stdio()).await?;

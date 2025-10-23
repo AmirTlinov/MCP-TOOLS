@@ -17,6 +17,8 @@ MCP TOOLS is the shared home for every Model Context Protocol (MCP) solution we 
 git clone git@github.com:iMAGRAY/MCP-TOOLS.git
 cd MCP-TOOLS
 cargo run -p mcp_multi_tool
+# optional: load defaults
+cp .env.example .env
 ```
 
 Any MCP-capable agent (Codex CLI, Claude Code, Gemini Code Assist, etc.) can connect to the binary via stdio without additional flags.
@@ -48,6 +50,9 @@ cargo test
 
 # Coverage (requires llvm-tools-preview)
 cargo llvm-cov --lcov --output-path coverage.lcov --fail-under-lines 85
+
+# Compliance against a target MCP server
+just compliance command="$(which mcp-server-binary)"
 ```
 
 Check `CONTRIBUTING.md` for the full checklist. New tools live under `tools/<tool-name>` and must be registered in the workspace manifest. Additional references: architecture diagram (`docs/architecture/mcp-multi-tool.md`), metrics spec (`docs/metrics.md`), and contract schemas (`docs/contracts/`).
@@ -55,6 +60,10 @@ Check `CONTRIBUTING.md` for the full checklist. New tools live under `tools/<too
 ## Releases
 
 Tagged commits (`v*`) trigger `.github/workflows/release.yml`, producing binaries for Linux (`x86_64-unknown-linux-gnu`), macOS (`aarch64-apple-darwin`), and Windows (`x86_64-pc-windows-msvc`). Artifacts ship alongside a checksum file. Use `cargo run --release -p mcp_multi_tool` for local smoke tests before tagging.
+
+## Compliance Suite
+
+`cargo run --release -p mcp_multi_tool --bin compliance -- --command <target>` spawns a target MCP stdio server, runs probe/list/call checks, and emits a JSON report (exit code 1 if pass rate <95%). Combine with `--output-json` / `--output-md` for archival.
 
 ## License
 

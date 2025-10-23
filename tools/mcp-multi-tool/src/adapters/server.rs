@@ -1,24 +1,98 @@
 use anyhow::Result;
 use rmcp::{ErrorData as McpError, ServerHandler, model::*};
+use serde_json::{Value, json};
+use std::{sync::Arc, time::Instant};
+use time::OffsetDateTime;
 
 use crate::{
     app::{inspector_service::InspectorService, registry::ToolRegistry},
     domain::run::InspectionRun,
-    shared::types::{CallRequest, ProbeRequest},
+    infra::{config::IdempotencyConflictPolicy, outbox::Outbox},
+    shared::{
+        idempotency::{ClaimOutcome, IdempotencyStore},
+        types::{CallRequest, InspectionRunEvent, ProbeRequest, TargetDescriptor},
+    },
 };
 
 #[derive(Clone)]
 pub struct InspectorServer {
     svc: InspectorService,
     registry: ToolRegistry,
+    outbox: Arc<Outbox>,
+    idempotency: Arc<IdempotencyStore>,
+    conflict_policy: IdempotencyConflictPolicy,
 }
 
 impl InspectorServer {
-    pub fn new() -> Self {
+    pub fn new(
+        svc: InspectorService,
+        registry: ToolRegistry,
+        outbox: Arc<Outbox>,
+        idempotency: Arc<IdempotencyStore>,
+        conflict_policy: IdempotencyConflictPolicy,
+    ) -> Self {
         Self {
-            svc: InspectorService::new(),
-            registry: ToolRegistry::default(),
+            svc,
+            registry,
+            outbox,
+            idempotency,
+            conflict_policy,
         }
+    }
+
+    fn idempotency_conflict_response(
+        &self,
+        existing: Option<InspectionRunEvent>,
+        message: &str,
+    ) -> CallToolResult {
+        let payload = match existing {
+            Some(event) => json!({
+                "error": message,
+                "code": "IDEMPOTENCY_CONFLICT",
+                "event": event,
+            }),
+            None => json!({
+                "error": message,
+                "code": "IDEMPOTENCY_CONFLICT",
+            }),
+        };
+        CallToolResult::structured_error(payload)
+    }
+
+    fn return_existing_event(&self, event: InspectionRunEvent) -> CallToolResult {
+        CallToolResult::structured(json!({
+            "status": "duplicate",
+            "event": event,
+        }))
+    }
+
+    fn build_event(
+        &self,
+        run: &InspectionRun,
+        request: &CallRequest,
+        started_at: OffsetDateTime,
+        duration_ms: u64,
+        target: Option<TargetDescriptor>,
+        response: Option<Value>,
+        error: Option<String>,
+    ) -> InspectionRunEvent {
+        let started_at_str = started_at.to_string();
+        InspectionRunEvent {
+            event_id: uuid::Uuid::new_v4(),
+            run_id: run.id,
+            tool_name: request.tool_name.clone(),
+            state: run.state.as_str().to_string(),
+            started_at: started_at_str,
+            duration_ms,
+            target,
+            request: serde_json::to_value(request).ok(),
+            response,
+            error,
+        }
+    }
+
+    fn snapshot_result(&self, result: &CallToolResult) -> Option<Value> {
+        serde_json::to_value(result).ok()
     }
 }
 
@@ -39,8 +113,8 @@ impl ServerHandler for InspectorServer {
             protocol_version: request.protocol_version,
             capabilities,
             server_info: Implementation {
-                name: "mcp-inspector".into(),
-                title: Some("MCP Inspector".into()),
+                name: "mcp-multi-tool".into(),
+                title: Some("MCP MultiTool".into()),
                 version: env!("CARGO_PKG_VERSION").into(),
                 icons: None,
                 website_url: None,
@@ -91,7 +165,7 @@ impl ServerHandler for InspectorServer {
                 "help" | "inspector_help" => {
                     let spec = serde_json::json!({
                       "server": {
-                        "name": "mcp-inspector",
+                        "name": "mcp-multi-tool",
                         "version": env!("CARGO_PKG_VERSION"),
                         "protocol": "MCP",
                         "transport": "stdio"
@@ -231,54 +305,130 @@ impl ServerHandler for InspectorServer {
                 "inspector_call" | "inspector.call" => {
                     match serde_json::from_value::<CallRequest>(args_val) {
                         Ok(req) => {
-                            // priority: explicit stdio target first, then environment fallback
-                            if let Some(target) = req.stdio.as_ref() {
-                                match this
-                                    .svc
+                            let started_at = OffsetDateTime::now_utc();
+                            let timer = Instant::now();
+                            let mut target_descriptor = TargetDescriptor {
+                                transport: "stdio".into(),
+                                command: None,
+                                url: None,
+                            };
+                            let mut claimed_key: Option<String> = None;
+                            if let Some(key) = req.idempotency_key.clone() {
+                                match this.idempotency.claim(&key) {
+                                    ClaimOutcome::Accepted => {
+                                        claimed_key = Some(key);
+                                    }
+                                    ClaimOutcome::InFlight => {
+                                        run.fail();
+                                        let err = this.idempotency_conflict_response(
+                                            None,
+                                            "idempotency key already in-flight",
+                                        );
+                                        return Ok(err);
+                                    }
+                                    ClaimOutcome::Completed(event) => {
+                                        return match this.conflict_policy {
+                                            IdempotencyConflictPolicy::ReturnExisting => {
+                                                run.capture();
+                                                Ok(this.return_existing_event(event))
+                                            }
+                                            IdempotencyConflictPolicy::Conflict409 => {
+                                                run.fail();
+                                                Ok(this.idempotency_conflict_response(
+                                                    Some(event),
+                                                    "idempotency conflict",
+                                                ))
+                                            }
+                                        };
+                                    }
+                                }
+                            }
+                            let call_outcome = if let Some(target) = req.stdio.as_ref() {
+                                target_descriptor.command = Some(target.command.clone());
+                                this.svc
                                     .call_stdio(
                                         target.command.clone(),
                                         target.args.clone(),
                                         target.env.clone(),
                                         target.cwd.clone(),
-                                        req.tool_name,
-                                        req.arguments_json,
+                                        req.tool_name.clone(),
+                                        req.arguments_json.clone(),
                                     )
                                     .await
-                                {
-                                    Ok(res) => Ok(res),
-                                    Err(e) => Err(failure(&e.to_string())),
-                                }
                             } else {
                                 let default_cmd = std::env::var("INSPECTOR_STDIO_CMD").ok();
                                 let fallback: Result<(String, Vec<String>), CallToolResult> =
                                     if let Some(cmd) = default_cmd {
                                         crate::shared::utils::parse_command(&cmd)
+                                            .map(|(program, args)| {
+                                                target_descriptor.command = Some(program.clone());
+                                                (program, args)
+                                            })
                                             .map_err(|e| failure(&e.to_string()))
                                     } else {
                                         Err(failure(
                                             "INSPECTOR_STDIO_CMD env is required or pass 'stdio' target",
                                         ))
                                     };
-
                                 match fallback {
                                     Ok((program, args)) => {
-                                        match this
-                                            .svc
+                                        this.svc
                                             .call_stdio(
-                                                program,
+                                                program.clone(),
                                                 args,
                                                 None,
                                                 None,
-                                                req.tool_name,
-                                                req.arguments_json,
+                                                req.tool_name.clone(),
+                                                req.arguments_json.clone(),
                                             )
                                             .await
-                                        {
-                                            Ok(res) => Ok(res),
-                                            Err(e) => Err(failure(&e.to_string())),
-                                        }
                                     }
-                                    Err(err) => Err(err),
+                                    Err(err) => return Ok(err),
+                                }
+                            };
+                            match call_outcome {
+                                Ok(res) => {
+                                    run.capture();
+                                    let duration_ms = timer.elapsed().as_millis() as u64;
+                                    let event = this.build_event(
+                                        &run,
+                                        &req,
+                                        started_at,
+                                        duration_ms,
+                                        Some(target_descriptor),
+                                        this.snapshot_result(&res),
+                                        None,
+                                    );
+                                    if let Err(e) = this.outbox.append(&event) {
+                                        tracing::error!(%run_id, error=%e, "failed to append outbox event");
+                                    }
+                                    if let Some(key) = claimed_key {
+                                        this.idempotency.complete(&key, event);
+                                    }
+                                    Ok(res)
+                                }
+                                Err(error) => {
+                                    run.fail();
+                                    let message = error.to_string();
+                                    let duration_ms = timer.elapsed().as_millis() as u64;
+                                    let event = this.build_event(
+                                        &run,
+                                        &req,
+                                        started_at,
+                                        duration_ms,
+                                        Some(target_descriptor),
+                                        None,
+                                        Some(message.clone()),
+                                    );
+                                    if let Err(e) = this.outbox.append(&event) {
+                                        tracing::error!(%run_id, error=%e, "failed to append failed event to outbox");
+                                    }
+                                    if let Some(key) = claimed_key {
+                                        this.idempotency.complete(&key, event);
+                                    }
+                                    Err(CallToolResult::structured_error(json!({
+                                        "error": message
+                                    })))
                                 }
                             }
                         }
@@ -311,8 +461,8 @@ impl ServerHandler for InspectorServer {
         ServerInfo {
             capabilities,
             server_info: Implementation {
-                name: "mcp-inspector".into(),
-                title: Some("MCP Inspector".into()),
+                name: "mcp-multi-tool".into(),
+                title: Some("MCP MultiTool".into()),
                 version: env!("CARGO_PKG_VERSION").into(),
                 icons: None,
                 website_url: None,

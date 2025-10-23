@@ -36,6 +36,17 @@ impl InspectionRun {
     }
 }
 
+impl RunState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RunState::Pending => "pending",
+            RunState::Processing => "processing",
+            RunState::Captured => "captured",
+            RunState::Failed => "failed",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

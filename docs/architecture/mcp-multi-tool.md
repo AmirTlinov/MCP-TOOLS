@@ -20,13 +20,14 @@
 - **shared**: pure helpers, DTOs, and schema types reused across layers.
 - **domain**: `InspectionRun` state machine guarding allowed transitions (`pending → processing → captured/failed`).
 - **app**: orchestrates inspector use cases (probe, list, call). Handles transport selection and latency metrics.
+- **app::compliance**: reusable suite that drives probe/list/call checks against downstream MCP servers and emits deterministic reports.
 - **adapters**: RMCP server wiring, request/response mapping, help manifest.
 - **infra**: configuration reader, Prometheus metrics server.
 - **entry**: `main.rs` bootstrap, logging setup, metrics spawn, RMCP stdio service start.
 
 ## Side-Effect Strategy
 - Execute remote tool calls through the app layer, producing `CallToolResult` while tracking `InspectionRun` invariants.
-- Outbox (file-based) stores DLQ events (`data/outbox/dlq.jsonl`). The `infra` module will own durable outbox wiring in future milestones.
+- Outbox (file-based) stores DLQ events (`data/outbox/dlq.jsonl`) via `infra::outbox::Outbox`. The `infra` module will own durable outbox wiring in future milestones.
 - Each effect path obeys `CLAIM|OUTBOX`: claim run, perform effect, persist event if downstream is unavailable.
 
 ## Metrics Flow
@@ -40,4 +41,4 @@
 
 ## Future Hooks
 - Add SSE/HTTP clients under `app::inspector_service` as feature flags mature.
-- Introduce transactional outbox writer once durable storage is selected (`infra::outbox`).
+- Promote file-based outbox to a durable backend with replay worker.

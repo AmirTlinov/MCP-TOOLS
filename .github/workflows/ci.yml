@@ -38,6 +38,16 @@ jobs:
         with:
           tool: cargo-llvm-cov
 
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
       - name: Format check
         run: cargo fmt --all -- --check
 
@@ -49,3 +59,9 @@ jobs:
 
       - name: Coverage
         run: cargo llvm-cov --workspace --lcov --output-path coverage.lcov --fail-under-lines 85 --no-report
+
+      - name: Cargo deny
+        run: cargo deny check
+
+      - name: Cargo audit
+        run: cargo audit --deny warnings

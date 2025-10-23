@@ -1,0 +1,248 @@
+use anyhow::Result;
+use serde::Serialize;
+use serde_json::{Value, json};
+use std::{collections::BTreeMap, time::Instant};
+use time::OffsetDateTime;
+
+use crate::{
+    app::inspector_service::InspectorService,
+    shared::types::{ProbeRequest, TargetTransportKind},
+};
+
+#[derive(Clone, Debug, Serialize, Default)]
+pub struct ComplianceTarget {
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+}
+
+impl ComplianceTarget {
+    pub fn stdio<S: Into<String>>(command: S) -> Self {
+        Self {
+            command: command.into(),
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CaseResult {
+    pub name: String,
+    pub passed: bool,
+    pub duration_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<Value>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ComplianceReport {
+    pub started_at: String,
+    pub finished_at: String,
+    pub pass_rate: f64,
+    pub cases: Vec<CaseResult>,
+}
+
+impl ComplianceReport {
+    pub fn passed(&self) -> bool {
+        self.pass_rate >= 0.95
+    }
+
+    pub fn to_markdown(&self) -> String {
+        let mut md = String::new();
+        md.push_str("| Case | Status | Duration (ms) | Notes |\n");
+        md.push_str("| --- | --- | --- | --- |\n");
+        for case in &self.cases {
+            let status = if case.passed { "✅" } else { "❌" };
+            let notes = case
+                .detail
+                .as_ref()
+                .map(|v| serde_json::to_string(v).unwrap_or_default())
+                .unwrap_or_else(|| "-".into());
+            md.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
+                case.name, status, case.duration_ms, notes
+            ));
+        }
+        md.push_str(&format!(
+            "\nPass rate: {:.2}% (threshold 95%)",
+            self.pass_rate * 100.0
+        ));
+        md
+    }
+}
+
+pub struct ComplianceSuite {
+    svc: InspectorService,
+}
+
+impl Default for ComplianceSuite {
+    fn default() -> Self {
+        Self {
+            svc: InspectorService::new(),
+        }
+    }
+}
+
+impl ComplianceSuite {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub async fn run(&self, target: ComplianceTarget) -> Result<ComplianceReport> {
+        let started_at = OffsetDateTime::now_utc();
+        let mut cases = Vec::new();
+
+        cases.push(self.probe_case(&target).await?);
+        cases.push(self.list_tools_case(&target).await?);
+        cases.push(self.help_case(&target).await?);
+
+        let finished_at = OffsetDateTime::now_utc();
+        let pass_count = cases.iter().filter(|c| c.passed).count() as f64;
+        let total = cases.len().max(1) as f64;
+        let pass_rate = pass_count / total;
+
+        Ok(ComplianceReport {
+            started_at: started_at.to_string(),
+            finished_at: finished_at.to_string(),
+            pass_rate,
+            cases,
+        })
+    }
+
+    async fn probe_case(&self, target: &ComplianceTarget) -> Result<CaseResult> {
+        let timer = Instant::now();
+        let req = ProbeRequest {
+            transport: Some(TargetTransportKind::Stdio),
+            command: Some(target.command.clone()),
+            args: Some(target.args.clone()),
+            env: target.env.clone(),
+            cwd: target.cwd.clone(),
+            url: None,
+            headers: None,
+            auth_token: None,
+            handshake_timeout_ms: Some(15_000),
+        };
+        match self.svc.probe(req).await {
+            Ok(res) => {
+                let passed = res.ok;
+                Ok(CaseResult {
+                    name: "probe_stdio".into(),
+                    passed,
+                    duration_ms: timer.elapsed().as_millis() as u64,
+                    detail: Some(json!({
+                        "transport": res.transport,
+                        "version": res.version,
+                        "latency_ms": res.latency_ms,
+                        "error": res.error,
+                    })),
+                })
+            }
+            Err(err) => Ok(CaseResult {
+                name: "probe_stdio".into(),
+                passed: false,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({
+                    "error": err.to_string()
+                })),
+            }),
+        }
+    }
+
+    async fn list_tools_case(&self, target: &ComplianceTarget) -> Result<CaseResult> {
+        let timer = Instant::now();
+        let outcome = self
+            .svc
+            .list_tools_stdio(
+                target.command.clone(),
+                target.args.clone(),
+                target.env.clone(),
+                target.cwd.clone(),
+            )
+            .await;
+        match outcome {
+            Ok(tools) => {
+                let passed = !tools.is_empty();
+                Ok(CaseResult {
+                    name: "list_tools".into(),
+                    passed,
+                    duration_ms: timer.elapsed().as_millis() as u64,
+                    detail: Some(json!({
+                        "tool_count": tools.len(),
+                    })),
+                })
+            }
+            Err(err) => Ok(CaseResult {
+                name: "list_tools".into(),
+                passed: false,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({
+                    "error": err.to_string()
+                })),
+            }),
+        }
+    }
+
+    async fn help_case(&self, target: &ComplianceTarget) -> Result<CaseResult> {
+        let timer = Instant::now();
+        let outcome = self
+            .svc
+            .call_stdio(
+                target.command.clone(),
+                target.args.clone(),
+                target.env.clone(),
+                target.cwd.clone(),
+                "help".into(),
+                json!({}),
+            )
+            .await;
+        match outcome {
+            Ok(res) => {
+                let passed = res.structured_content.is_some() || !res.content.is_empty();
+                Ok(CaseResult {
+                    name: "call_help".into(),
+                    passed,
+                    duration_ms: timer.elapsed().as_millis() as u64,
+                    detail: self.snapshot(&res),
+                })
+            }
+            Err(err) => Ok(CaseResult {
+                name: "call_help".into(),
+                passed: false,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({
+                    "error": err.to_string()
+                })),
+            }),
+        }
+    }
+
+    fn snapshot(&self, res: &rmcp::model::CallToolResult) -> Option<Value> {
+        serde_json::to_value(res).ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn report_pass_rate() {
+        let report = ComplianceReport {
+            started_at: OffsetDateTime::now_utc().to_string(),
+            finished_at: OffsetDateTime::now_utc().to_string(),
+            pass_rate: 0.96,
+            cases: vec![CaseResult {
+                name: "sample".into(),
+                passed: true,
+                duration_ms: 10,
+                detail: None,
+            }],
+        };
+        assert!(report.passed());
+        assert!(report.to_markdown().contains("Pass rate"));
+    }
+}

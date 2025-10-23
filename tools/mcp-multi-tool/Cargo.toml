@@ -7,6 +7,10 @@ edition = "2024"
 name = "mcp-multi-tool"
 path = "src/main.rs"
 
+[[bin]]
+name = "compliance"
+path = "src/bin/compliance.rs"
+
 [dependencies]
 anyhow = "1"
 thiserror = "1"
@@ -40,6 +44,7 @@ which = "6"
 dotenvy = "0.15"
 shell-words = "1.1"
 schemars = "1"
+clap = { version = "4", features = ["derive"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
