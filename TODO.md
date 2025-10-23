@@ -27,7 +27,7 @@ Format: `<ID> — <concise action> — DoD`. Every item maps to a T-ID.
 - [x] T-0013 — `inspector.call` (with trace) — DoD: E2E matches baseline.
 - [x] T-0015 — Streaming onChunk/onFinal — DoD: mixed streaming test green.
 - [x] T-0016 — Compliance suite — DoD: deterministic JSON/MD report.
-- [ ] T-0030 — Real-world E2E example — DoD: ≥90% pass with report attached.
+- [x] T-0030 — Real-world E2E example — DoD: ≥90% pass with report attached.
 
 ## 4. Reliability & Idempotency (WS-004)
 - [x] T-0014 — Idempotency (CLAIM + key) — DoD: property tests stable 3×100 runs.
