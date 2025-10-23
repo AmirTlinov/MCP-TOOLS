@@ -231,6 +231,7 @@ impl ConfigOverlay {
 #[serde(rename_all = "snake_case")]
 pub enum IdempotencyConflictPolicy {
     ReturnExisting,
+    #[serde(alias = "conflict_409", alias = "conflict")]
     Conflict409,
 }
 
@@ -367,6 +368,18 @@ mod tests {
                 assert!(!cfg.error_budget.enabled);
                 assert_eq!(cfg.error_budget.success_threshold, 0.75);
             },
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn default_config_parses() -> Result<()> {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let config_dir = manifest_dir.join("config");
+        let cfg = AppConfig::load_from_dir(&config_dir)?;
+        assert_eq!(
+            cfg.idempotency_conflict_policy,
+            IdempotencyConflictPolicy::Conflict409
         );
         Ok(())
     }
