@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iMAGRAY/MCP-TOOLS/contracts/inspection-run-event.schema.json",
+  "title": "InspectionRunEvent",
+  "description": "Event emitted whenever MCP MultiTool completes an inspection run.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "run_id",
+    "tool_name",
+    "state",
+    "started_at",
+    "duration_ms"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this event record."
+    },
+    "run_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Identifier of the logical inspection run."
+    },
+    "tool_name": {
+      "type": "string",
+      "description": "Name of the target tool executed on the downstream MCP server."
+    },
+    "state": {
+      "type": "string",
+      "enum": ["pending", "processing", "captured", "failed"],
+      "description": "Terminal state reached by the run."
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp when the run entered processing."
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total run duration in milliseconds."
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport"],
+      "properties": {
+        "transport": {
+          "type": "string",
+          "enum": ["stdio", "sse", "http"],
+          "description": "Transport used for the target MCP server."
+        },
+        "command": {
+          "type": "string",
+          "description": "Executable invoked for stdio transport (if applicable)."
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Endpoint for SSE/HTTP transports."
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "description": "Serialized request payload sent to the downstream server.",
+      "additionalProperties": true
+    },
+    "response": {
+      "type": "object",
+      "description": "Structured response body captured from the downstream server.",
+      "additionalProperties": true
+    },
+    "error": {
+      "type": ["string", "null"],
+      "description": "Human-readable error message if the run failed."
+    }
+  }
+}

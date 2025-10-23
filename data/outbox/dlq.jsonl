@@ -1,0 +1,1 @@
+{"event_id":"00000000-0000-0000-0000-000000000000","run_id":"00000000-0000-0000-0000-000000000000","tool_name":"inspector_call","state":"failed","started_at":"2025-01-01T00:00:00Z","duration_ms":1200,"target":{"transport":"stdio","command":"uvx mcp-server-git"},"request":{"tool_name":"git_status"},"response":{},"error":"timeout"}

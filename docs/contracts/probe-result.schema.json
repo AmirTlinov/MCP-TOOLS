@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iMAGRAY/MCP-TOOLS/contracts/probe-result.schema.json",
+  "title": "ProbeResult",
+  "description": "Result envelope for inspector_probe tool invocations.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ok", "transport"],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "description": "Indicates whether the probe succeeded."
+    },
+    "transport": {
+      "type": "string",
+      "enum": ["stdio", "sse", "http"],
+      "description": "Transport used for the probe attempt."
+    },
+    "server_name": {
+      "type": ["string", "null"],
+      "description": "Name reported by the downstream MCP server, if any."
+    },
+    "version": {
+      "type": ["string", "null"],
+      "description": "Version string reported by the downstream MCP server."
+    },
+    "latency_ms": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Measured handshake latency in milliseconds."
+    },
+    "error": {
+      "type": ["string", "null"],
+      "description": "Error message if the probe failed."
+    }
+  }
+}
