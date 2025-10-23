@@ -97,10 +97,10 @@ impl ServerHandler for InspectorServer {
                         "transport": "stdio"
                       },
                       "tldr": [
-                        "1) help → смотри примеры",
+                        "1) help -> review examples",
                         "2) inspector_probe (stdio|sse|http)",
-                        "3) inspector_list_tools (только stdio)",
-                        "4) inspector_call (только stdio, transport lowercase)"
+                        "3) inspector_list_tools (stdio only)",
+                        "4) inspector_call (stdio only, transport lowercase)"
                       ],
                       "quick_start": [
                         {"tool":"inspector_probe","arguments":{"transport":"stdio","command":"uvx","args":["mcp-server-git"]},"expect":{"ok":true}},
@@ -125,54 +125,54 @@ impl ServerHandler for InspectorServer {
                       },
                       "tools": {
                         "help": {
-                          "purpose": "Вернуть эту формальную справку",
+                          "purpose": "Return this reference manual.",
                           "params_table": [],
-                          "returns": {"type": "object", "description": "Структурированная справка"}
+                          "returns": {"type": "object", "description": "Structured reference payload"}
                         },
                         "inspector_probe": {
-                          "purpose": "Проверка подключения к целевому MCP и извлечение версии/латентности",
+                          "purpose": "Check connectivity to a target MCP and capture version/latency.",
                           "params_table": [
-                            {"name":"transport","type":"enum(stdio|sse|http)","required":false,"default":"stdio","desc":"Целевой транспорт (строчные значения)"},
-                            {"name":"command","type":"string","required":false,"default":null,"desc":"Исполняемый файл stdio‑сервера"},
-                            {"name":"args","type":"array<string>","required":false,"default":[],"desc":"Аргументы процесса"},
-                            {"name":"env","type":"map<string,string>","required":false,"default":null,"desc":"ENV для процесса"},
-                            {"name":"cwd","type":"string","required":false,"default":null,"desc":"Рабочая директория"},
-                            {"name":"url","type":"string","required":false,"default":null,"desc":"SSE/HTTP URL"},
-                            {"name":"headers","type":"map<string,string>","required":false,"default":null,"desc":"Заголовки (SSE/HTTP)"},
-                            {"name":"auth_token","type":"string","required":false,"default":null,"desc":"Bearer токен"},
-                            {"name":"handshake_timeout_ms","type":"integer","required":false,"default":15000,"desc":"Таймаут рукопожатия"}
+                            {"name":"transport","type":"enum(stdio|sse|http)","required":false,"default":"stdio","desc":"Target transport (lowercase values)"},
+                            {"name":"command","type":"string","required":false,"default":null,"desc":"Executable for the stdio server"},
+                            {"name":"args","type":"array<string>","required":false,"default":[],"desc":"Process arguments"},
+                            {"name":"env","type":"map<string,string>","required":false,"default":null,"desc":"Environment variables for the process"},
+                            {"name":"cwd","type":"string","required":false,"default":null,"desc":"Working directory"},
+                            {"name":"url","type":"string","required":false,"default":null,"desc":"SSE/HTTP endpoint"},
+                            {"name":"headers","type":"map<string,string>","required":false,"default":null,"desc":"Headers for SSE/HTTP transports"},
+                            {"name":"auth_token","type":"string","required":false,"default":null,"desc":"Bearer token for HTTP"},
+                            {"name":"handshake_timeout_ms","type":"integer","required":false,"default":15000,"desc":"Handshake timeout in milliseconds"}
                           ],
                           "returns": {"ok":"bool","transport":"string","server_name":"string|null","version":"string|null","latency_ms":"integer|null","error":"string|null"}
                         },
                         "inspector_list_tools": {
-                          "purpose": "Список инструментов целевого stdio MCP",
+                          "purpose": "List tools exposed by the target stdio MCP.",
                           "params_table": [
-                            {"name":"command","type":"string","required":true,"default":null,"desc":"Процесс stdio‑сервера"},
-                            {"name":"args","type":"array<string>","required":false,"default":[],"desc":"Аргументы процесса"},
-                            {"name":"env","type":"map<string,string>","required":false,"default":null,"desc":"ENV"},
-                            {"name":"cwd","type":"string","required":false,"default":null,"desc":"Рабочая директория"}
+                            {"name":"command","type":"string","required":true,"default":null,"desc":"Target stdio server process"},
+                            {"name":"args","type":"array<string>","required":false,"default":[],"desc":"Process arguments"},
+                            {"name":"env","type":"map<string,string>","required":false,"default":null,"desc":"Environment variables"},
+                            {"name":"cwd","type":"string","required":false,"default":null,"desc":"Working directory"}
                           ],
                           "returns": {"tools":"array<Tool>"}
                         },
                         "inspector_call": {
-                          "purpose": "Вызвать инструмент целевого stdio MCP",
+                          "purpose": "Invoke a tool on the target stdio MCP.",
                           "params_table": [
-                            {"name":"tool_name","type":"string","required":true,"default":null,"desc":"Имя инструмента на целевом сервере"},
-                            {"name":"arguments_json","type":"object","required":true,"default":{},"desc":"Аргументы целевого инструмента"},
-                            {"name":"stdio","type":"object","required":false,"default":null,"desc":"Переопределение цели stdio: {command,args,env?,cwd?}"}
+                            {"name":"tool_name","type":"string","required":true,"default":null,"desc":"Tool name on the target server"},
+                            {"name":"arguments_json","type":"object","required":true,"default":{},"desc":"Tool arguments"},
+                            {"name":"stdio","type":"object","required":false,"default":null,"desc":"Override stdio target: {command,args,env?,cwd?}"}
                           ],
-                          "preconditions": ["Либо передай 'stdio', либо установи ENV INSPECTOR_STDIO_CMD"],
+                          "preconditions": ["Pass 'stdio' override or configure INSPECTOR_STDIO_CMD env"],
                           "returns": {"content":"array<Content>","structured_content":"object|null"}
                         }
                       },
                       "notes": {
-                        "http_auth": "Для HTTP поддержан Bearer через auth_header (ProbeRequest.auth_token)",
-                        "sse_auth": "SSE-токен недоступен в rmcp 0.8.1 через public API; используй HTTP transport, если нужен токен"
+                        "http_auth": "HTTP transport accepts Bearer tokens via ProbeRequest.auth_token.",
+                        "sse_auth": "rmcp 0.8.1 lacks public support for SSE tokens; use HTTP transport if auth is required."
                       },
                       "errors": [
-                        {"code":"MISSING_COMMAND","tool":"inspector_list_tools","reason":"Не передан command","action":"Укажи command и при необходимости args"},
-                        {"code":"MISSING_STDIO_CMD","tool":"inspector_call","reason":"Не задан ENV INSPECTOR_STDIO_CMD","action":"Экспортируй переменную окружения согласно разделу env"},
-                        {"code":"UNKNOWN_TOOL","tool":"*","reason":"Запрошен неизвестный инструмент","action":"Используй help или inspector_list_tools"}
+                        {"code":"MISSING_COMMAND","tool":"inspector_list_tools","reason":"command was not provided","action":"Pass command (and args if needed)"},
+                        {"code":"MISSING_STDIO_CMD","tool":"inspector_call","reason":"INSPECTOR_STDIO_CMD not set","action":"Export the environment variable or provide stdio override"},
+                        {"code":"UNKNOWN_TOOL","tool":"*","reason":"Requested tool is not registered","action":"Use help or inspector_list_tools"}
                       ]
                     });
                     Ok(CallToolResult::structured(spec))
@@ -231,7 +231,7 @@ impl ServerHandler for InspectorServer {
                 "inspector_call" | "inspector.call" => {
                     match serde_json::from_value::<CallRequest>(args_val) {
                         Ok(req) => {
-                            // приоритет — явный target, затем ENV
+                            // priority: explicit stdio target first, then environment fallback
                             if let Some(target) = req.stdio.as_ref() {
                                 match this
                                     .svc

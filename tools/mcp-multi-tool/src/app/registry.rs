@@ -13,23 +13,23 @@ impl ToolRegistry {
         vec![
             Tool::new(
                 "help",
-                "Детерминированная формальная справка по использованию инструментов этого сервера.",
-                // Некоторые клиенты ожидают input_schema типа object, а не null
+                "Deterministic reference manual for every tool exposed by this server.",
+                // Some clients expect input_schema to be an object rather than null
                 schema_for::<Parameters<crate::shared::types::EmptyArgs>>(),
             ),
             Tool::new(
                 "inspector_probe",
-                "Подключиться к целевому MCP и получить версию/latency",
+                "Connect to a target MCP and retrieve version/latency details.",
                 schema_for::<Parameters<crate::shared::types::ProbeRequest>>(),
             ),
             Tool::new(
                 "inspector_list_tools",
-                "Получить список инструментов целевого MCP через stdio",
+                "List target MCP tools via stdio transport.",
                 schema_for::<Parameters<crate::shared::types::ProbeRequest>>(),
             ),
             Tool::new(
                 "inspector_call",
-                "Вызвать инструмент целевого MCP через stdio",
+                "Call a target MCP tool via stdio transport.",
                 schema_for::<Parameters<crate::shared::types::CallRequest>>(),
             ),
         ]

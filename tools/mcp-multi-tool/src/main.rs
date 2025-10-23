@@ -17,7 +17,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 async fn main() -> Result<()> {
     let _ = dotenvy::dotenv();
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("off"));
-    // ВАЖНО: писать логи в stderr, stdout занят MCP JSON-RPC
+    // IMPORTANT: write logs to stderr; stdout must remain clear for MCP JSON-RPC
     fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
@@ -38,8 +38,8 @@ async fn main() -> Result<()> {
     }
 
     let handler = InspectorServer::new();
-    // Стартуем сервер. Нотификацию tools/list_changed отправим в on_initialized,
-    // чтобы не терять её до завершения рукопожатия.
+    // Start the server. Emit tools/list_changed inside on_initialized so
+    // the notification is not lost before the handshake completes.
     let server = handler.serve(stdio()).await?;
     server.waiting().await?;
     Ok(())

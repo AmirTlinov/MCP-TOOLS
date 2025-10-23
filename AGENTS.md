@@ -1,11 +1,8 @@
-ЦЕЛЬ: Создать mcp stdio сервер для предельно быстрого и качественного создания mcp серверов любой сложности
+# Mission Overview
 
-ВАЖНО:
-1- MVP сделать инструмент MCP MultiTool с помощью которого ии агент используя данный mcp сервер сможет предельно когнетивно легко и полно тестировать mcp созданные серверы.
+Our mission is to build a Rust-based MCP stdio server that becomes the fastest way to craft and validate complex MCP servers.
 
-2 - Сервер должен быть создан на Rust и работать через единый бинарник без лишних флагов и бреда. чтобы можно было предельно просто и качественно его подключить к любому ai cli (codex; claude code; gemini и пр.)
-
-
-Используем актуальные данные и версии: (если неуверен в актуальности, используй веб)
-rmcp 0.8.1
-MCP — 2025-06-18 https://modelcontextprotocol.info/blog/mcp-next-version-update/
+## Focus Areas
+1. Ship the **MCP MultiTool** so any AI agent can rapidly probe, describe, and exercise arbitrary MCP servers.
+2. Maintain a single binary distribution: zero CLI flags, configuration only via `config/` and environment variables so the binary plugs into any AI CLI (Codex, Claude Code, Gemini, etc.).
+3. Track upstream standards aggressively. Pin runtime on `rmcp = 0.8.1` and MCP protocol revision 2025-06-18 until the next validated release.

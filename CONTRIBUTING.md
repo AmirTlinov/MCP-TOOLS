@@ -1,31 +1,31 @@
-# Руководство для контрибьюторов
+# Contributing Guide
 
-Добро пожаловать! Чтобы поддерживать *flagship* уровень качества MCP TOOLS, соблюдай правила ниже.
+Thanks for helping keep MCP TOOLS at flagship quality. Follow the rules below for every change.
 
-## Базовые принципы
-- **DDD + Modular Monolith**: новые пакеты кладём в `tools/`, слойность смотри в `tools/mcp-multi-tool/src` (`domain`, `app`, `adapters`, `infra`, `shared`).
-- **Config First**: новые настройки добавляй в `config/` + отражай в документации.
-- **Contract First**: публичные API/ивенты оформляй JSON Schema в `docs/contracts/` и обновляй README.
+## Principles
+- **DDD + Modular Monolith**: add new crates under `tools/`. Respect layer boundaries inside crates (`domain`, `app`, `adapters`, `infra`, `shared`).
+- **Config First**: place configuration defaults under `config/` and document them.
+- **Contract First**: publish JSON Schemas for every public API or event under `docs/contracts/` and link them from the README when ready.
 
-## Качество кода
-- `cargo fmt` — форматирование обязательно.
-- `cargo clippy --all-targets --all-features -D warnings` — без предупреждений.
-- `cargo test` — все тесты (юнит/интеграция).
-- `cargo llvm-cov --fail-under-lines 85` — покрытие по строкам ≥85% для изменённого кода.
-- При работе со state machine (статусы `pending` → `processing` → `captured` → `failed`) пиши property-тесты на недопустимые переходы.
+## Quality Gates
+- `cargo fmt` — required formatting.
+- `cargo clippy --all-targets --all-features -D warnings` — no warnings allowed.
+- `cargo test` — run unit and integration suites.
+- `cargo llvm-cov --fail-under-lines 85` — line coverage must stay at or above 85% for the touched code.
+- State machines (`pending → processing → captured → failed`) need property tests to prove illegal transitions are blocked.
 
 ## Git & CI
-- Ветви именуем `feature/<slug>` или `fix/<slug>`.
-- Каждый PR должен проходить `ci.yml` (fmt, clippy, tests, coverage).
-- Коммиты — в стиле Conventional Commits (`feat:`, `fix:`, `chore:` и т.д.).
+- Branch names: `feature/<slug>` or `fix/<slug>`.
+- Follow Conventional Commits (`feat:`, `fix:`, `chore:`, etc.).
+- Every PR must pass `.github/workflows/ci.yml` (fmt, clippy, test, coverage).
 
-## Безопасность и надёжность
-- Любые побочные эффекты через шаблон `CLAIM|OUTBOX` с `RETURNING`.
-- Метрики добавляй в `infra::metrics`, документируй в `docs/metrics.md`.
-- Не хардкодь секреты, используй `dotenv`/`config/`.
+## Safety & Reliability
+- Execute side effects with the `CLAIM|OUTBOX` template and `UPDATE … RETURNING` semantics.
+- Register metrics via `infra::metrics` and document them in `docs/metrics.md`.
+- Never hardcode secrets; rely on dotenv/config wiring.
 
-## Документация
-- Обновляй `AGENTS.md`, `PLAN.md`, `README.md` при изменении стратегии.
-- Для новых инструментов создавай `docs/<tool>/overview.md` с архитектурой и сценариями использования.
+## Documentation
+- Update `AGENTS.md`, `PLAN.md`, and `README.md` when strategy or scope changes.
+- Add `docs/<tool>/overview.md` for each new tool, covering architecture and usage scenarios.
 
-Спасибо за вклад!
+Thanks for contributing!

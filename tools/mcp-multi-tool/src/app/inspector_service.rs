@@ -107,7 +107,7 @@ impl InspectorService {
                 error: Some("missing url".into()),
             });
         }
-        // rmcp 0.8.1: public API для SSE не позволяет передать auth_token при start(); см. help ограничения
+        // rmcp 0.8.1: the public SSE API cannot pass auth_token to start(); see help limitations
         let handshake_timeout = Duration::from_millis(req.handshake_timeout_ms.unwrap_or(15_000));
         let _pending = PendingGaugeGuard::new();
         let transport = SseClientTransport::start(url).await?;
@@ -148,7 +148,7 @@ impl InspectorService {
                 error: Some("missing url".into()),
             });
         }
-        // Поддержим Bearer для HTTP через config
+        // Allow Bearer tokens for HTTP via the request config
         let mut cfg =
             rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig::with_uri(
                 url.clone(),

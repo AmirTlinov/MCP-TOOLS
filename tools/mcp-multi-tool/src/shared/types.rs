@@ -43,7 +43,7 @@ pub struct CallRequest {
     pub tool_name: String,
     pub arguments_json: serde_json::Value,
     pub idempotency_key: Option<String>,
-    // optional stdio target overrides (если задан — ENV игнорируется)
+    // optional stdio target overrides (takes precedence over environment defaults)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stdio: Option<StdioTarget>,
 }

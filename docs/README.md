@@ -1,9 +1,9 @@
-# Документация MCP TOOLS
+# MCP TOOLS Documentation
 
-## Структура
-- `architecture/` — схемы и описания модулей (DDD, слои, диаграммы).
-- `contracts/` — JSON Schema и публичные спецификации MCP инструментов.
+## Structure
+- `architecture/` — diagrams, module boundaries, and DDD notes.
+- `contracts/` — JSON Schemas and public MCP specifications.
 
-## TODO
-- Добавить описание дорожной карты MCP MultiTool.
-- Задокументировать формат transactional outbox и метрик `/metrics`.
+## Backlog
+- Add the detailed roadmap for MCP MultiTool.
+- Document transactional outbox record format and the `/metrics` payload.

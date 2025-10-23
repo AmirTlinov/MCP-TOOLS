@@ -1,17 +1,17 @@
 # MCP TOOLS Monorepo
 
-MCP TOOLS — это общий монорепозиторий для всех наших решений на Model Context Protocol (MCP). Первая поставка — **MCP MultiTool**, stdio‑сервер/клиент на Rust, который помогает агентам быстро инспектировать и стресс‑тестировать сторонние MCP‑совместимые сервисы.
+MCP TOOLS is the shared home for every Model Context Protocol (MCP) solution we ship. The first delivery is **MCP MultiTool**, a Rust stdio server + client that lets AI agents inspect and stress-test third-party MCP services with minimal friction.
 
-## Что внутри
+## Repository Layout
 
-| Путь | Назначение |
+| Path | Purpose |
 | --- | --- |
-| `tools/mcp-multi-tool/` | Бинарный crate MCP MultiTool (stdio MCP сервер + инспектор целевых MCP). |
-| `data/` | Лёгкие артефакты (например, sample outbox/dlq). |
-| `docs/` | Архитектура, публичные контракты, схемы (заполняется по мере готовности). |
-| `config/` | Конфигурация по принципу Contract‑First (будет добавляться вместе с новыми сервисами). |
+| `tools/mcp-multi-tool/` | Primary binary crate. Hosts the MCP MultiTool stdio server and inspector. |
+| `data/` | Lightweight artifacts (for example, sample outbox/dlq payloads). |
+| `docs/` | Architecture notes, public contracts, JSON Schemas (expands as features land). |
+| `config/` | Reserved for configuration bundles (added together with upcoming services). |
 
-## Быстрый старт
+## Quickstart
 
 ```bash
 git clone git@github.com:iMAGRAY/MCP-TOOLS.git
@@ -19,39 +19,39 @@ cd MCP-TOOLS
 cargo run -p mcp_multi_tool
 ```
 
-Агент, совместимый с MCP (Codex CLI, Claude Code, Gemini Code Assist и др.), может подключаться к бинарю через stdio без дополнительных флагов.
+Any MCP-capable agent (Codex CLI, Claude Code, Gemini Code Assist, etc.) can connect to the binary via stdio without additional flags.
 
-## Профиль качества
+## Quality Bar
 
-- Архитектура: Modular Monolith с DDD, Ports & Adapters, CQRS по необходимости.
-- Контракты: MCP 2025-06-18, rmcp `=0.8.1`, JSON Schema для событий.
-- Надёжность: идемпотентность `idempotency_key`, transactional outbox, reaper TTL 60s.
-- Метрики: Prometheus `/metrics`, защищённый доступ (TLS+Auth, dev-флаг `ALLOW_INSECURE_METRICS_DEV=true`).
-- Тесты: `cargo test` + property/race/coverage ≥85% (Statements/Lines) — см. `CONTRIBUTING.md`.
-- CI: GitHub Actions `ci.yml` (fmt, clippy, tests, покрытие).
+- Architecture: Modular Monolith with DDD and Ports & Adapters; use CQRS where it buys clarity.
+- Contracts: MCP 2025-06-18, `rmcp = 0.8.1`, public JSON Schemas for all emitted events.
+- Reliability: idempotency via `idempotency_key`, transactional outbox with 60s reaper TTL.
+- Observability: Prometheus `/metrics`, TLS + Auth (dev override `ALLOW_INSECURE_METRICS_DEV=true`).
+- Tests: `cargo test` plus property/race tests, coverage ≥85% Lines & Statements for touched code.
+- CI: GitHub Actions pipeline runs fmt, clippy, tests, coverage gate.
 
-## MCP MultiTool — фичи MVP
+## MCP MultiTool Highlights
 
-- Быстрое подключение к целевому MCP (stdio/SSE/HTTP) и инспекция `list_tools`, `describe`, `call`, `stream`.
-- Смок‑сценарий `cargo run -p mcp_multi_tool --bin smoketest` для самопроверки.
-- Интеграционный тест `tests/interop.rs`, который поднимает сервер и исполняет базовые запросы.
+- Rapid attach to target MCP servers (stdio / SSE / streamable HTTP) with full `list_tools`, `describe`, `call`, and streaming coverage.
+- Smoketest binary: `cargo run -p mcp_multi_tool --bin smoketest` spins up the server and exercises a happy path.
+- Integration test `tests/interop.rs` boots the binary and performs remote calls via rmcp APIs.
 
-## Разработка
+## Development Workflow
 
 ```bash
-# Форматирование и быстрые проверки
+# Formatting and linting
 cargo fmt
 cargo clippy --all-targets --all-features
 
-# Юнит и интеграция
+# Unit + integration tests
 cargo test
 
-# Покрытие (требуется llvm-tools-preview)
+# Coverage (requires llvm-tools-preview)
 cargo llvm-cov --lcov --output-path coverage.lcov --fail-under-lines 85
 ```
 
-Подробные правила и чек-листы см. в `CONTRIBUTING.md`. Новые инструменты добавляй в `tools/<tool-name>` и регистрируй в workspace.
+Check `CONTRIBUTING.md` for the full checklist. New tools live under `tools/<tool-name>` and must be registered in the workspace manifest.
 
-## Лицензия
+## License
 
-Проект распространяется по лицензии [The Unlicense](LICENSE) — можно делать что угодно, без ограничений.
+This project is released under [The Unlicense](LICENSE). You can use it for any purpose with no restrictions.
