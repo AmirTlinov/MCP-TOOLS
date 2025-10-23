@@ -85,4 +85,4 @@ Optional flags `--sse-url` and `--http-url` let you probe additional transports;
 
 ## License
 
-This project is released under [The Unlicense](LICENSE). You can use it for any purpose with no restrictions.
+This project is released under the [GNU Affero General Public License v3.0 or later](LICENSE). You may run, study, share, and modify the software so long as derivatives retain the same license and preserve attribution.
