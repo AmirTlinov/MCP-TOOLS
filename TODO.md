@@ -50,8 +50,8 @@ Format: `<ID> — <concise action> — DoD`. Every item maps to a T-ID.
 - [x] T-0022 — CI coverage gate 85% — DoD: pipeline fails under threshold.
 - [x] T-0023 — Mock MCP server — DoD: E2E harness ready.
 - [x] T-0024 — Property tests for idempotency — DoD: 3×100 seeds stable.
-- [ ] T-0025 — Race tests — DoD: lock wait p99 ≤50ms.
-- [ ] T-0026 — Crash/edge harness — DoD: zero panics across runs.
+- [x] T-0025 — Race tests — DoD: lock wait p99 ≤50ms.
+- [x] T-0026 — Crash/edge harness — DoD: zero panics across runs.
 - [x] T-0036 — ACL/dependency rules — DoD: CI fails on violations.
 - [x] T-0037 — Lint/security audits — DoD: zero critical findings.
 - [x] T-0038 — Architecture tests — DoD: zero dependency cycles.
