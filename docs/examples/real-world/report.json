@@ -1,0 +1,153 @@
+{
+  "started_at": "2025-10-23 19:18:20.554569006 +00:00:00",
+  "finished_at": "2025-10-23 19:18:20.762847682 +00:00:00",
+  "pass_rate": 1.0,
+  "cases": [
+    {
+      "name": "list_tools_sse",
+      "passed": true,
+      "duration_ms": 1,
+      "detail": {
+        "tool_count": 4,
+        "url": "http://127.0.0.1:9100/sse"
+      }
+    },
+    {
+      "name": "list_tools_http",
+      "passed": true,
+      "duration_ms": 1,
+      "detail": {
+        "tool_count": 4,
+        "url": "http://127.0.0.1:9101/mcp"
+      }
+    },
+    {
+      "name": "describe_help_sse",
+      "passed": true,
+      "duration_ms": 0,
+      "detail": {
+        "tool": {
+          "description": "Return a list of mock tools and usage hints.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "title": "MockHelpArgs",
+            "type": "object"
+          },
+          "name": "help"
+        }
+      }
+    },
+    {
+      "name": "describe_help_http",
+      "passed": true,
+      "duration_ms": 0,
+      "detail": {
+        "tool": {
+          "description": "Return a list of mock tools and usage hints.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "title": "MockHelpArgs",
+            "type": "object"
+          },
+          "name": "help"
+        }
+      }
+    },
+    {
+      "name": "call_help_sse",
+      "passed": true,
+      "duration_ms": 1,
+      "detail": {
+        "content": [
+          {
+            "text": "{\"tools\":[{\"name\":\"help\",\"usage\":\"help\"},{\"name\":\"echo\",\"usage\":\"echo text=\\\"hello\\\"\"},{\"name\":\"add\",\"usage\":\"add values=[1,2,3]\"}]}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "tools": [
+            {
+              "name": "help",
+              "usage": "help"
+            },
+            {
+              "name": "echo",
+              "usage": "echo text=\"hello\""
+            },
+            {
+              "name": "add",
+              "usage": "add values=[1,2,3]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "call_help_http",
+      "passed": true,
+      "duration_ms": 1,
+      "detail": {
+        "content": [
+          {
+            "text": "{\"tools\":[{\"name\":\"help\",\"usage\":\"help\"},{\"name\":\"echo\",\"usage\":\"echo text=\\\"hello\\\"\"},{\"name\":\"add\",\"usage\":\"add values=[1,2,3]\"}]}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "tools": [
+            {
+              "name": "help",
+              "usage": "help"
+            },
+            {
+              "name": "echo",
+              "usage": "echo text=\"hello\""
+            },
+            {
+              "name": "add",
+              "usage": "add values=[1,2,3]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "probe_sse",
+      "passed": true,
+      "duration_ms": 0,
+      "detail": {
+        "error": null,
+        "latency_ms": 0,
+        "url": "http://127.0.0.1:9100/sse"
+      }
+    },
+    {
+      "name": "probe_http",
+      "passed": true,
+      "duration_ms": 0,
+      "detail": {
+        "error": null,
+        "latency_ms": 0,
+        "url": "http://127.0.0.1:9101/mcp"
+      }
+    },
+    {
+      "name": "negative_missing_command",
+      "passed": true,
+      "duration_ms": 0,
+      "detail": {
+        "expected_error": true,
+        "response": {
+          "error": "missing command for stdio",
+          "latency_ms": null,
+          "ok": false,
+          "server_name": null,
+          "transport": "stdio",
+          "version": null
+        }
+      }
+    }
+  ]
+}
