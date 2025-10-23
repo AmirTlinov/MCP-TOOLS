@@ -19,6 +19,7 @@ Release binaries land in `target/release/`.
 - `metrics_tls_cert_path` / `metrics_tls_key_path` — point to `config/certs/multitool.{crt,key}` for the dev bundle; replace with your certificate chain.
 - `outbox_*` — file paths for durable run events (use sqlite via `OUTBOX_DB_PATH` for stronger guarantees).
 - `idempotency_conflict_policy` — defaults to `conflict_409`; aliases (`conflict_409`, `conflict`, `conflict409`) are accepted.
+- `release_track` — `stable`/`canary` keep the full inspector surface; switch to `rollback` to expose only `help` during mitigation.
 
 The server reads overlays in order:
 1. `config/default.toml`
@@ -87,6 +88,7 @@ You should see the five inspector tools and the mock server logs confirming succ
 
 ## 7. Production Checklist
 - Rotate `METRICS_AUTH_TOKEN` and replace the dev cert/key at `config/certs/multitool.{crt,key}` with your production chain.
+- Confirm the service runs in `release_track = "stable"` (or `"canary"` for controlled roll-outs); use `rollback` only for emergency disable.
 - Promote sqlite outbox via `OUTBOX_DB_PATH` for durable persistence.
 - Pin `ERROR_BUDGET_*` to match your incident policy; default freeze is 5 minutes with 95% minimum success.
 - Monitor Prometheus metrics: `inspector_inflight`, `outbox_backlog`, `error_budget_frozen`, latency histograms.

@@ -82,6 +82,7 @@ Optional flags `--sse-url` and `--http-url` let you probe additional transports;
 - `ERROR_BUDGET_*` knobs (enabled/threshold/sample window/min requests/freeze) tune the error-budget freeze gate.
 - `external_reference` (inspector_call argument) combines with idempotency to deduplicate upstream events across transports.
 - `stream` (inspector_call argument) enables capturing downstream progress events; the final payload exposes `mode: "stream"`, `events`, and the terminal response snapshot.
+- `release_track` toggles runtime posture: `stable` (default) and `canary` expose the full inspector surface, while `rollback` serves only `help` and returns `RELEASE_TRACK_ROLLBACK` errors for other tools.
 
 ## License
 

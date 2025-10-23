@@ -59,4 +59,4 @@ Format: `<ID> — <concise action> — DoD`. Every item maps to a T-ID.
 ## 8. Release & Ops (WS-008)
 - [x] T-0028 — Release artifacts (Linux/macOS/Windows) — DoD: downloadable binaries run.
 - [ ] T-0029 — Security baseline — DoD: no critical vulnerabilities.
-- [ ] T-0034 — Canary/Rollback toggle — DoD: feature flag validated.
+- [x] T-0034 — Canary/Rollback toggle — DoD: feature flag validated.

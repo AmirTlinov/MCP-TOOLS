@@ -93,7 +93,7 @@ async fn main() -> Result<()> {
 
     let handler = InspectorServer::new(
         InspectorService::new(),
-        ToolRegistry::default(),
+        ToolRegistry::new(config.release_track),
         outbox,
         idempotency,
         config.idempotency_conflict_policy,

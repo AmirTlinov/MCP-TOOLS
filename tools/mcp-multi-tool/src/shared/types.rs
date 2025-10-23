@@ -1,6 +1,8 @@
+use anyhow::anyhow;
 use rmcp::schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct EmptyArgs {}
@@ -37,6 +39,50 @@ pub struct ProbeResult {
     pub version: Option<String>,
     pub latency_ms: Option<u64>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReleaseTrack {
+    Stable,
+    Canary,
+    Rollback,
+}
+
+impl ReleaseTrack {
+    pub fn allows_inspector(&self) -> bool {
+        !matches!(self, ReleaseTrack::Rollback)
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ReleaseTrack::Stable => "stable",
+            ReleaseTrack::Canary => "canary",
+            ReleaseTrack::Rollback => "rollback",
+        }
+    }
+}
+
+impl Default for ReleaseTrack {
+    fn default() -> Self {
+        ReleaseTrack::Stable
+    }
+}
+
+impl FromStr for ReleaseTrack {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_lowercase().as_str() {
+            "stable" => Ok(ReleaseTrack::Stable),
+            "canary" => Ok(ReleaseTrack::Canary),
+            "rollback" => Ok(ReleaseTrack::Rollback),
+            raw => Err(anyhow!(
+                "invalid release track '{}'; expected stable/canary/rollback",
+                raw
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

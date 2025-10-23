@@ -190,14 +190,25 @@ impl ServerHandler for InspectorServer {
                 CallToolResult::structured_error(serde_json::json!({"error": msg}))
             };
 
+            let release_track = this.registry.release_track();
+            if !release_track.allows_inspector() && name != "help" && name != "inspector_help" {
+                let payload = serde_json::json!({
+                    "error": "inspector disabled by release track",
+                    "code": "RELEASE_TRACK_ROLLBACK"
+                });
+                run.fail();
+                return Ok(CallToolResult::structured_error(payload));
+            }
+
             let result: Result<CallToolResult, CallToolResult> = match name {
                 "help" | "inspector_help" => {
-                    let lines = vec![
+                    let mut lines = vec![
                         serde_json::json!({
                             "section": "summary",
                             "server": "mcp-multi-tool",
                             "version": env!("CARGO_PKG_VERSION"),
                             "protocol": "MCP",
+                            "release_track": release_track.as_str(),
                             "transports": ["stdio", "sse", "http"]
                         }),
                         serde_json::json!({
@@ -292,6 +303,14 @@ impl ServerHandler for InspectorServer {
                             ]
                         }),
                     ];
+
+                    if !release_track.allows_inspector() {
+                        lines.push(serde_json::json!({
+                            "section": "notice",
+                            "code": "release_track_rollback",
+                            "message": "Inspector tools temporarily disabled; set RELEASE_TRACK=stable or canary to re-enable."
+                        }));
+                    }
 
                     let payload = serde_json::json!({
                         "format": "jsonl",

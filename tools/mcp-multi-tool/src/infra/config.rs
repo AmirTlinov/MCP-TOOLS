@@ -1,4 +1,7 @@
-use crate::infra::metrics::{MetricsServerConfig, TlsConfig};
+use crate::{
+    infra::metrics::{MetricsServerConfig, TlsConfig},
+    shared::types::ReleaseTrack,
+};
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -26,6 +29,8 @@ pub struct AppConfig {
     pub idempotency_conflict_policy: IdempotencyConflictPolicy,
     #[serde(default)]
     pub error_budget: ErrorBudgetSettings,
+    #[serde(default)]
+    pub release_track: ReleaseTrack,
 }
 
 impl AppConfig {
@@ -117,6 +122,9 @@ impl AppConfig {
         if let Some(budget) = overlay.error_budget {
             self.error_budget.apply_overlay(budget);
         }
+        if let Some(track) = overlay.release_track {
+            self.release_track = track;
+        }
     }
 
     pub fn metrics_server_config(&self) -> Result<Option<MetricsServerConfig>> {
@@ -166,6 +174,7 @@ impl Default for AppConfig {
             outbox_db_path: None,
             idempotency_conflict_policy: IdempotencyConflictPolicy::default(),
             error_budget: ErrorBudgetSettings::default(),
+            release_track: ReleaseTrack::default(),
         }
     }
 }
@@ -183,6 +192,8 @@ struct ConfigOverlay {
     idempotency_conflict_policy: Option<IdempotencyConflictPolicy>,
     #[serde(default)]
     error_budget: Option<ErrorBudgetOverlay>,
+    #[serde(default)]
+    release_track: Option<ReleaseTrack>,
 }
 
 impl ConfigOverlay {
@@ -212,6 +223,9 @@ impl ConfigOverlay {
             .ok()
             .and_then(|raw| IdempotencyConflictPolicy::from_str(&raw).ok());
         let error_budget = ErrorBudgetOverlay::from_env();
+        let release_track = env::var("RELEASE_TRACK")
+            .ok()
+            .and_then(|raw| ReleaseTrack::from_str(&raw).ok());
         Self {
             metrics_addr,
             allow_insecure_metrics_dev,
@@ -223,6 +237,7 @@ impl ConfigOverlay {
             outbox_db_path,
             idempotency_conflict_policy,
             error_budget,
+            release_track,
         }
     }
 }
@@ -308,6 +323,7 @@ mod tests {
                 ("ERROR_BUDGET_SAMPLE_WINDOW_SECS", None),
                 ("ERROR_BUDGET_MIN_REQUESTS", None),
                 ("ERROR_BUDGET_FREEZE_SECS", None),
+                ("RELEASE_TRACK", None),
             ],
             || {
                 let cfg = AppConfig::load_from_dir(dir.path()).expect("config load");
@@ -321,6 +337,7 @@ mod tests {
                 assert_eq!(dlq, PathBuf::from("data/outbox/dlq.jsonl"));
                 assert!(cfg.error_budget.enabled);
                 assert_eq!(cfg.error_budget.success_threshold, 0.99);
+                assert_eq!(cfg.release_track, ReleaseTrack::Stable);
             },
         );
         Ok(())
@@ -352,6 +369,7 @@ mod tests {
                 ("IDEMPOTENCY_CONFLICT_POLICY", Some("return_existing")),
                 ("ERROR_BUDGET_ENABLED", Some("false")),
                 ("ERROR_BUDGET_SUCCESS_THRESHOLD", Some("0.75")),
+                ("RELEASE_TRACK", Some("canary")),
             ],
             || {
                 let cfg = AppConfig::load_from_dir(dir.path()).expect("config load");
@@ -367,6 +385,7 @@ mod tests {
                 );
                 assert!(!cfg.error_budget.enabled);
                 assert_eq!(cfg.error_budget.success_threshold, 0.75);
+                assert_eq!(cfg.release_track, ReleaseTrack::Canary);
             },
         );
         Ok(())
