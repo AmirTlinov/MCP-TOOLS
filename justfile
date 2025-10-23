@@ -14,3 +14,6 @@ coverage:
 
 compliance command='':
 	cargo run --release -p mcp_multi_tool --bin compliance -- --command {{command}}
+
+security:
+	cargo deny check advisories

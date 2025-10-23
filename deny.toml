@@ -1,12 +1,24 @@
-[advisories]
-denied = []
-ignore = []
-
 [bans]
 multiple-versions = "deny"
 
+[advisories]
+	[[advisories.ignore]]
+	id = "RUSTSEC-2024-0436"
+	reason = "rmcp pinned to 0.8.1 per MCP protocol requirements; track upstream fix."
+
 [licenses]
-allow = ["Apache-2.0", "MIT", "BSD-3-Clause", "BSD-2-Clause", "ISC", "Unlicense", "MPL-2.0", "Unicode-3.0", "Zlib", "CC0-1.0"]
+allow = [
+    "AGPL-3.0-or-later",
+    "Apache-2.0",
+    "MIT",
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0"
+]
 confidence-threshold = 0.8
 
 [sources]
