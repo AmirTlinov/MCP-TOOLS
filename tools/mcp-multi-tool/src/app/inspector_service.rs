@@ -7,13 +7,15 @@ use rmcp::{
         streamable_http_client::StreamableHttpClientTransport,
     },
 };
-use std::{collections::BTreeMap, process::Stdio, time::Duration};
+use std::{collections::BTreeMap, env, process::Stdio, time::Duration};
 use tokio::{process::Command, time::timeout};
 
 use crate::{
     infra::metrics::{LATENCY_HISTO, PendingGaugeGuard},
     shared::{
-        types::{HttpTarget, ProbeRequest, ProbeResult, SseTarget, TargetTransportKind},
+        types::{
+            DescribeRequest, HttpTarget, ProbeRequest, ProbeResult, SseTarget, TargetTransportKind,
+        },
         utils::{measure_latency, parse_command},
     },
 };
@@ -33,6 +35,34 @@ impl InspectorService {
             TargetTransportKind::Sse => self.probe_sse(req).await,
             TargetTransportKind::Http => self.probe_http(req).await,
         }
+    }
+
+    pub async fn list_tools(&self, req: ProbeRequest) -> Result<Vec<Tool>> {
+        let transport = req.transport.clone().unwrap_or(TargetTransportKind::Stdio);
+        match transport {
+            TargetTransportKind::Stdio => {
+                let (command, args) = resolve_stdio_invocation(&req)?;
+                self.list_tools_stdio(command, args, req.env.clone(), req.cwd.clone())
+                    .await
+            }
+            TargetTransportKind::Sse => {
+                let target = build_sse_target(&req)?;
+                self.list_tools_sse(&target).await
+            }
+            TargetTransportKind::Http => {
+                let target = build_http_target(&req)?;
+                self.list_tools_http(&target).await
+            }
+        }
+    }
+
+    pub async fn describe(&self, req: DescribeRequest) -> Result<Tool> {
+        let tools = self.list_tools(req.probe).await?;
+        let tool_name = req.tool_name;
+        tools
+            .into_iter()
+            .find(|tool| tool.name.as_ref() == tool_name)
+            .ok_or_else(|| anyhow::anyhow!("tool '{}' not found", tool_name))
     }
 
     async fn probe_stdio(&self, req: ProbeRequest) -> Result<ProbeResult> {
@@ -334,4 +364,54 @@ impl InspectorService {
             .await?;
         Ok(res)
     }
+}
+
+fn resolve_stdio_invocation(req: &ProbeRequest) -> Result<(String, Vec<String>)> {
+    if let Some(cmd) = req.command.as_ref() {
+        if cmd.trim().is_empty() {
+            return Err(anyhow::anyhow!("command is required for stdio transport"));
+        }
+        if let Some(args) = req.args.as_ref() {
+            return Ok((cmd.clone(), args.clone()));
+        }
+        return parse_command(cmd);
+    }
+    if let Some(args) = req.args.as_ref() {
+        if !args.is_empty() {
+            return Err(anyhow::anyhow!(
+                "arguments provided without command for stdio transport"
+            ));
+        }
+    }
+    let env_cmd = env::var("INSPECTOR_STDIO_CMD").map_err(|_| {
+        anyhow::anyhow!(
+            "command is required for stdio transport; set 'command'/'args' or INSPECTOR_STDIO_CMD"
+        )
+    })?;
+    parse_command(&env_cmd)
+}
+
+fn build_sse_target(req: &ProbeRequest) -> Result<SseTarget> {
+    let url = req.url.clone().unwrap_or_default();
+    if url.is_empty() {
+        return Err(anyhow::anyhow!("missing sse url"));
+    }
+    Ok(SseTarget {
+        url,
+        headers: req.headers.clone(),
+        handshake_timeout_ms: req.handshake_timeout_ms,
+    })
+}
+
+fn build_http_target(req: &ProbeRequest) -> Result<HttpTarget> {
+    let url = req.url.clone().unwrap_or_default();
+    if url.is_empty() {
+        return Err(anyhow::anyhow!("missing http url"));
+    }
+    Ok(HttpTarget {
+        url,
+        headers: req.headers.clone(),
+        auth_token: req.auth_token.clone(),
+        handshake_timeout_ms: req.handshake_timeout_ms,
+    })
 }

@@ -10,7 +10,7 @@ use crate::{
     infra::{config::IdempotencyConflictPolicy, outbox::Outbox},
     shared::{
         idempotency::{ClaimOutcome, IdempotencyStore},
-        types::{CallRequest, InspectionRunEvent, ProbeRequest, TargetDescriptor},
+        types::{CallRequest, DescribeRequest, InspectionRunEvent, ProbeRequest, TargetDescriptor},
     },
 };
 
@@ -173,22 +173,25 @@ impl ServerHandler for InspectorServer {
                       "tldr": [
                         "1) help -> review examples",
                         "2) inspector_probe (stdio|sse|http)",
-                        "3) inspector_list_tools (stdio only)",
-                        "4) inspector_call (stdio only, transport lowercase)"
+                        "3) inspector_list_tools (multi-transport)",
+                        "4) inspector_describe (schemas & annotations)",
+                        "5) inspector_call (stdio|sse|http)"
                       ],
                       "quick_start": [
                         {"tool":"inspector_probe","arguments":{"transport":"stdio","command":"uvx","args":["mcp-server-git"]},"expect":{"ok":true}},
-                        {"tool":"inspector_list_tools","arguments":{"command":"uvx","args":["mcp-server-git"]},"expect":{"tools_min":1}},
+                        {"tool":"inspector_list_tools","arguments":{"transport":"stdio","command":"uvx","args":["mcp-server-git"]},"expect":{"tools_min":1}},
+                        {"tool":"inspector_describe","arguments":{"tool_name":"help","transport":"stdio","command":"uvx","args":["mcp-server-git"]},"expect":{"name":"help"}},
                         {"tool":"inspector_call","env":{"INSPECTOR_STDIO_CMD":"uvx mcp-server-git"},"arguments":{"tool_name":"git_status","arguments_json":{"repo_path":"."}},"expect":{"structured_or_text":true}}
                       ],
                       "constraints": {
                         "inspector_probe": {"transports":["Stdio","Sse","Http"]},
                         "inspector_list_tools": {"transports":["Stdio","Sse","Http"]},
+                        "inspector_describe": {"transports":["Stdio","Sse","Http"]},
                         "inspector_call": {"transports":["Stdio","Sse","Http"]}
                       },
                       "env": {
                         "INSPECTOR_STDIO_CMD": {
-                          "required_for": ["inspector_call"],
+                          "required_for": ["inspector_list_tools","inspector_describe","inspector_call"],
                           "format": "<command> [args...]",
                           "examples": {
                             "linux_macos_bash": "export INSPECTOR_STDIO_CMD='uvx mcp-server-git'",
@@ -219,19 +222,38 @@ impl ServerHandler for InspectorServer {
                           "returns": {"ok":"bool","transport":"string","server_name":"string|null","version":"string|null","latency_ms":"integer|null","error":"string|null"}
                         },
                         "inspector_list_tools": {
-                          "purpose": "List tools exposed by the target stdio MCP.",
+                          "purpose": "List tools exposed by the target MCP over stdio/SSE/HTTP.",
                           "params_table": [
-                            {"name":"command","type":"string","required":true,"default":null,"desc":"Target stdio server process"},
+                            {"name":"transport","type":"enum(stdio|sse|http)","required":false,"default":"stdio","desc":"Target transport (lowercase values)"},
+                            {"name":"command","type":"string","required":false,"default":null,"desc":"Target stdio server process"},
                             {"name":"args","type":"array<string>","required":false,"default":[],"desc":"Process arguments"},
                             {"name":"env","type":"map<string,string>","required":false,"default":null,"desc":"Environment variables"},
                             {"name":"cwd","type":"string","required":false,"default":null,"desc":"Working directory"},
-                            {"name":"sse","type":"object","required":false,"default":null,"desc":"SSE override: {url,headers?,handshake_timeout_ms?}"},
-                            {"name":"http","type":"object","required":false,"default":null,"desc":"HTTP override: {url,headers?,auth_token?,handshake_timeout_ms?}"}
+                            {"name":"url","type":"string","required":false,"default":null,"desc":"SSE/HTTP endpoint"},
+                            {"name":"headers","type":"map<string,string>","required":false,"default":null,"desc":"Headers for SSE/HTTP"},
+                            {"name":"auth_token","type":"string","required":false,"default":null,"desc":"Bearer token for HTTP"},
+                            {"name":"handshake_timeout_ms","type":"integer","required":false,"default":15000,"desc":"Handshake timeout in milliseconds"}
                           ],
                           "returns": {"tools":"array<Tool>"}
                         },
+                        "inspector_describe": {
+                          "purpose": "Retrieve schema and annotations for a target tool.",
+                          "params_table": [
+                            {"name":"tool_name","type":"string","required":true,"default":null,"desc":"Tool name to describe"},
+                            {"name":"transport","type":"enum(stdio|sse|http)","required":false,"default":"stdio","desc":"Target transport"},
+                            {"name":"command","type":"string","required":false,"default":null,"desc":"Target stdio server process"},
+                            {"name":"args","type":"array<string>","required":false,"default":[],"desc":"Process arguments"},
+                            {"name":"env","type":"map<string,string>","required":false,"default":null,"desc":"Environment variables"},
+                            {"name":"cwd","type":"string","required":false,"default":null,"desc":"Working directory"},
+                            {"name":"url","type":"string","required":false,"default":null,"desc":"SSE/HTTP endpoint"},
+                            {"name":"headers","type":"map<string,string>","required":false,"default":null,"desc":"Headers for SSE/HTTP"},
+                            {"name":"auth_token","type":"string","required":false,"default":null,"desc":"Bearer token for HTTP"},
+                            {"name":"handshake_timeout_ms","type":"integer","required":false,"default":15000,"desc":"Handshake timeout in milliseconds"}
+                          ],
+                          "returns": {"tool":"Tool"}
+                        },
                         "inspector_call": {
-                          "purpose": "Invoke a tool on the target stdio MCP.",
+                          "purpose": "Invoke a tool on the target MCP over stdio/SSE/HTTP.",
                           "params_table": [
                             {"name":"tool_name","type":"string","required":true,"default":null,"desc":"Tool name on the target server"},
                             {"name":"arguments_json","type":"object","required":true,"default":{},"desc":"Tool arguments"},
@@ -248,7 +270,8 @@ impl ServerHandler for InspectorServer {
                         "sse_auth": "rmcp 0.8.1 lacks public support for SSE tokens; use HTTP transport if auth is required."
                       },
                       "errors": [
-                        {"code":"MISSING_COMMAND","tool":"inspector_list_tools","reason":"command was not provided","action":"Pass command (and args if needed)"},
+                        {"code":"MISSING_COMMAND","tool":"inspector_list_tools","reason":"command was not provided for stdio","action":"Pass command (and args if needed) or set INSPECTOR_STDIO_CMD"},
+                        {"code":"MISSING_COMMAND","tool":"inspector_describe","reason":"command was not provided for stdio","action":"Pass command (and args if needed) or set INSPECTOR_STDIO_CMD"},
                         {"code":"MISSING_STDIO_CMD","tool":"inspector_call","reason":"INSPECTOR_STDIO_CMD not set","action":"Export the environment variable or provide stdio override"},
                         {"code":"UNKNOWN_TOOL","tool":"*","reason":"Requested tool is not registered","action":"Use help or inspector_list_tools"}
                       ]
@@ -268,41 +291,24 @@ impl ServerHandler for InspectorServer {
                     }
                 }
                 "inspector_list_tools" | "inspector.list_tools" => {
-                    match serde_json::from_value::<crate::shared::types::ProbeRequest>(args_val) {
-                        Ok(req) => {
-                            let program_args: Result<(String, Vec<String>), CallToolResult> =
-                                if let (Some(cmd), Some(args)) =
-                                    (req.command.clone(), req.args.clone())
-                                {
-                                    Ok((cmd, args))
-                                } else if let Some(cmd) = req.command.clone() {
-                                    crate::shared::utils::parse_command(&cmd)
-                                        .map_err(|e| failure(&e.to_string()))
-                                } else {
-                                    Err(failure("command is required"))
-                                };
-
-                            match program_args {
-                                Ok((program, args)) => {
-                                    match this
-                                        .svc
-                                        .list_tools_stdio(
-                                            program,
-                                            args,
-                                            req.env.clone(),
-                                            req.cwd.clone(),
-                                        )
-                                        .await
-                                    {
-                                        Ok(tools) => Ok(CallToolResult::structured(
-                                            serde_json::json!({"tools": tools}),
-                                        )),
-                                        Err(e) => Err(failure(&e.to_string())),
-                                    }
-                                }
-                                Err(err) => Err(err),
-                            }
-                        }
+                    match serde_json::from_value::<ProbeRequest>(args_val) {
+                        Ok(req) => match this.svc.list_tools(req).await {
+                            Ok(tools) => Ok(CallToolResult::structured(json!({
+                                "tools": tools
+                            }))),
+                            Err(e) => Err(failure(&e.to_string())),
+                        },
+                        Err(e) => Err(failure(&e.to_string())),
+                    }
+                }
+                "inspector_describe" | "inspector.describe" => {
+                    match serde_json::from_value::<DescribeRequest>(args_val) {
+                        Ok(req) => match this.svc.describe(req).await {
+                            Ok(tool) => Ok(CallToolResult::structured(json!({
+                                "tool": tool
+                            }))),
+                            Err(e) => Err(failure(&e.to_string())),
+                        },
                         Err(e) => Err(failure(&e.to_string())),
                     }
                 }

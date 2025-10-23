@@ -172,8 +172,8 @@ impl FromStr for IdempotencyConflictPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::sync::Mutex;
+    use tempfile::tempdir;
 
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
 

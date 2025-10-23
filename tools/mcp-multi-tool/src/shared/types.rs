@@ -53,6 +53,14 @@ pub struct CallRequest {
     pub http: Option<HttpTarget>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DescribeRequest {
+    pub tool_name: String,
+    #[serde(flatten)]
+    #[serde(default)]
+    pub probe: ProbeRequest,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct StdioTarget {
     pub command: String,

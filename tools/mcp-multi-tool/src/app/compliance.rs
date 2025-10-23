@@ -10,7 +10,7 @@ use tokio::time::sleep;
 
 use crate::{
     app::inspector_service::InspectorService,
-    shared::types::{HttpTarget, ProbeRequest, SseTarget, TargetTransportKind},
+    shared::types::{DescribeRequest, HttpTarget, ProbeRequest, SseTarget, TargetTransportKind},
 };
 
 #[derive(Clone, Debug, Serialize, Default)]
@@ -119,6 +119,15 @@ impl ComplianceSuite {
             cases.push(case);
         }
         if let Some(case) = self.list_tools_http_case(&target).await? {
+            cases.push(case);
+        }
+        if let Some(case) = self.describe_stdio_case(&target).await? {
+            cases.push(case);
+        }
+        if let Some(case) = self.describe_sse_case(&target).await? {
+            cases.push(case);
+        }
+        if let Some(case) = self.describe_http_case(&target).await? {
             cases.push(case);
         }
         if target.sse_url.is_some() || target.http_url.is_some() {
@@ -292,6 +301,111 @@ impl ComplianceSuite {
                 detail: Some(json!({"error": err.to_string()})),
             },
         }))
+    }
+
+    async fn describe_stdio_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {
+        let Some(command) = target.command.as_ref() else {
+            return Ok(None);
+        };
+        let timer = Instant::now();
+        let req = DescribeRequest {
+            tool_name: "help".into(),
+            probe: ProbeRequest {
+                transport: Some(TargetTransportKind::Stdio),
+                command: Some(command.clone()),
+                args: Some(target.args.clone()),
+                env: target.env.clone(),
+                cwd: target.cwd.clone(),
+                url: None,
+                headers: None,
+                auth_token: None,
+                handshake_timeout_ms: Some(15_000),
+            },
+        };
+        match self.svc.describe(req).await {
+            Ok(tool) => Ok(Some(CaseResult {
+                name: "describe_help".into(),
+                passed: tool.name.as_ref() == "help",
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: serde_json::to_value(&tool).ok().map(|v| json!({"tool": v})),
+            })),
+            Err(err) => Ok(Some(CaseResult {
+                name: "describe_help".into(),
+                passed: false,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({"error": err.to_string()})),
+            })),
+        }
+    }
+
+    async fn describe_sse_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {
+        let Some(url) = target.sse_url.clone() else {
+            return Ok(None);
+        };
+        let timer = Instant::now();
+        let req = DescribeRequest {
+            tool_name: "help".into(),
+            probe: ProbeRequest {
+                transport: Some(TargetTransportKind::Sse),
+                command: None,
+                args: None,
+                env: None,
+                cwd: None,
+                url: Some(url.clone()),
+                headers: None,
+                auth_token: None,
+                handshake_timeout_ms: Some(15_000),
+            },
+        };
+        match self.svc.describe(req).await {
+            Ok(tool) => Ok(Some(CaseResult {
+                name: "describe_help_sse".into(),
+                passed: tool.name.as_ref() == "help",
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: serde_json::to_value(&tool).ok().map(|v| json!({"tool": v})),
+            })),
+            Err(err) => Ok(Some(CaseResult {
+                name: "describe_help_sse".into(),
+                passed: false,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({"error": err.to_string()})),
+            })),
+        }
+    }
+
+    async fn describe_http_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {
+        let Some(url) = target.http_url.clone() else {
+            return Ok(None);
+        };
+        let timer = Instant::now();
+        let req = DescribeRequest {
+            tool_name: "help".into(),
+            probe: ProbeRequest {
+                transport: Some(TargetTransportKind::Http),
+                command: None,
+                args: None,
+                env: None,
+                cwd: None,
+                url: Some(url.clone()),
+                headers: target.http_headers.clone(),
+                auth_token: target.http_auth_token.clone(),
+                handshake_timeout_ms: Some(15_000),
+            },
+        };
+        match self.svc.describe(req).await {
+            Ok(tool) => Ok(Some(CaseResult {
+                name: "describe_help_http".into(),
+                passed: tool.name.as_ref() == "help",
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: serde_json::to_value(&tool).ok().map(|v| json!({"tool": v})),
+            })),
+            Err(err) => Ok(Some(CaseResult {
+                name: "describe_help_http".into(),
+                passed: false,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({"error": err.to_string()})),
+            })),
+        }
     }
 
     async fn call_stdio_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {

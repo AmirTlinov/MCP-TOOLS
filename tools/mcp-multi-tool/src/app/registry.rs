@@ -24,12 +24,17 @@ impl ToolRegistry {
             ),
             Tool::new(
                 "inspector_list_tools",
-                "List target MCP tools via stdio transport.",
+                "List target MCP tools across stdio/SSE/HTTP transports.",
                 schema_for::<Parameters<crate::shared::types::ProbeRequest>>(),
             ),
             Tool::new(
+                "inspector_describe",
+                "Describe a target MCP tool including schemas and annotations.",
+                schema_for::<Parameters<crate::shared::types::DescribeRequest>>(),
+            ),
+            Tool::new(
                 "inspector_call",
-                "Call a target MCP tool via stdio transport.",
+                "Call a target MCP tool via stdio/SSE/HTTP transports.",
                 schema_for::<Parameters<crate::shared::types::CallRequest>>(),
             ),
         ]

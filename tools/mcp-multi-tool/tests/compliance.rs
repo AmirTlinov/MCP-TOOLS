@@ -88,16 +88,24 @@ fn compliance_with_mock_transports() -> Result<()> {
         .unwrap_or_default();
     let mut has_http = false;
     let mut has_sse = false;
+    let mut has_describe_http = false;
+    let mut has_describe_sse = false;
     for case in cases {
         if let Some(name) = case.get("name").and_then(Value::as_str) {
             if name == "call_help_http" {
                 has_http = true;
             } else if name == "call_help_sse" {
                 has_sse = true;
+            } else if name == "describe_help_http" {
+                has_describe_http = true;
+            } else if name == "describe_help_sse" {
+                has_describe_sse = true;
             }
         }
     }
     assert!(has_sse, "missing SSE call case");
     assert!(has_http, "missing HTTP call case");
+    assert!(has_describe_sse, "missing SSE describe case");
+    assert!(has_describe_http, "missing HTTP describe case");
     Ok(())
 }
