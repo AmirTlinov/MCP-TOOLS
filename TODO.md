@@ -31,7 +31,7 @@ Format: `<ID> — <concise action> — DoD`. Every item maps to a T-ID.
 
 ## 4. Reliability & Idempotency (WS-004)
 - [x] T-0014 — Idempotency (CLAIM + key) — DoD: property tests stable 3×100 runs.
-- [~] T-0031 — Transactional Outbox — DoD: zero loss during crash tests.
+- [x] T-0031 — Transactional Outbox — DoD: zero loss during crash tests.
 - [x] T-0032 — Reaper TTL = 60s — DoD: stuck→failed, event + metric emitted.
 - [x] T-0033 — Compensation `external_ref_unique` — DoD: compensation scenarios green.
 

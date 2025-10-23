@@ -107,7 +107,10 @@ impl Outbox {
             .append(true)
             .open(path)
             .with_context(|| format!("open outbox file {}", path.display()))?;
-        writeln!(file, "{line}").with_context(|| format!("append outbox line {}", path.display()))
+        writeln!(file, "{line}")
+            .with_context(|| format!("append outbox line {}", path.display()))?;
+        file.sync_all()
+            .with_context(|| format!("fsync outbox file {}", path.display()))
     }
 
     fn ensure_parent(path: &Path) -> Result<()> {
@@ -138,7 +141,8 @@ fn extract_event_id<T: Serialize>(event: &T) -> Option<uuid::Uuid> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde::Serialize;
+    use serde::{Deserialize, Serialize};
+    use std::{sync::Arc, thread};
     use tempfile::tempdir;
 
     #[derive(Serialize)]
@@ -201,6 +205,123 @@ mod tests {
         );
         let dlq_data = std::fs::read_to_string(&dlq)?;
         assert!(dlq_data.contains("fallback"));
+        Ok(())
+    }
+
+    #[test]
+    fn file_backend_persists_across_reopen() -> Result<()> {
+        let dir = tempdir()?;
+        let primary = dir.path().join("events.jsonl");
+        let dlq = dir.path().join("dlq.jsonl");
+        let outbox = Outbox::file(&primary, &dlq)?;
+        let event = DummyEvent {
+            event_id: uuid::Uuid::new_v4().to_string(),
+            payload: "persist".into(),
+        };
+        outbox.append(&event)?;
+        drop(outbox);
+
+        let data = std::fs::read_to_string(&primary)?;
+        assert!(data.contains("persist"));
+
+        // reopening must succeed and continue writing without data loss
+        let reopened = Outbox::file(&primary, &dlq)?;
+        assert_eq!("file", reopened.backend_description());
+        Ok(())
+    }
+
+    #[derive(Serialize, Deserialize, Debug)]
+    struct PersistedEvent {
+        event_id: String,
+        payload: String,
+    }
+
+    #[test]
+    fn file_backend_concurrent_appends_no_loss() -> Result<()> {
+        let dir = tempdir()?;
+        let primary = dir.path().join("events.jsonl");
+        let dlq = dir.path().join("dlq.jsonl");
+        let outbox = Arc::new(Outbox::file(&primary, &dlq)?);
+        let workers = 32;
+        thread::scope(|scope| {
+            for idx in 0..workers {
+                let outbox = Arc::clone(&outbox);
+                scope.spawn(move || {
+                    let event = DummyEvent {
+                        event_id: uuid::Uuid::new_v4().to_string(),
+                        payload: format!("payload-{idx}"),
+                    };
+                    outbox.append(&event).expect("append");
+                });
+            }
+        });
+
+        let data = std::fs::read_to_string(&primary)?;
+        let persisted: Vec<PersistedEvent> = data
+            .lines()
+            .map(|line| serde_json::from_str(line))
+            .collect::<Result<_, _>>()?;
+        assert_eq!(persisted.len(), workers as usize);
+        Ok(())
+    }
+
+    #[test]
+    fn sqlite_backend_persists_across_reopen() -> Result<()> {
+        let dir = tempdir()?;
+        let db_path = dir.path().join("outbox.db");
+        let dlq = dir.path().join("dlq.jsonl");
+        {
+            let outbox = Outbox::sqlite(&db_path, &dlq)?;
+            let event = DummyEvent {
+                event_id: uuid::Uuid::new_v4().to_string(),
+                payload: "persist".into(),
+            };
+            outbox.append(&event)?;
+        }
+
+        let conn = Connection::open(&db_path)?;
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM outbox_events", [], |row| row.get(0))?;
+        assert_eq!(count, 1);
+
+        // reopen should retain ability to append
+        let reopened = Outbox::sqlite(&db_path, &dlq)?;
+        assert_eq!("sqlite", reopened.backend_description());
+        let event = DummyEvent {
+            event_id: uuid::Uuid::new_v4().to_string(),
+            payload: "second".into(),
+        };
+        reopened.append(&event)?;
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM outbox_events", [], |row| row.get(0))?;
+        assert_eq!(count, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn sqlite_backend_concurrent_appends_no_loss() -> Result<()> {
+        let dir = tempdir()?;
+        let db_path = dir.path().join("outbox.db");
+        let dlq = dir.path().join("dlq.jsonl");
+        let outbox = Arc::new(Outbox::sqlite(&db_path, &dlq)?);
+        let workers = 32;
+        thread::scope(|scope| {
+            for idx in 0..workers {
+                let outbox = Arc::clone(&outbox);
+                scope.spawn(move || {
+                    let event = DummyEvent {
+                        event_id: uuid::Uuid::new_v4().to_string(),
+                        payload: format!("payload-{idx}"),
+                    };
+                    outbox.append(&event).expect("append sqlite");
+                });
+            }
+        });
+
+        let conn = Connection::open(&db_path)?;
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM outbox_events", [], |row| row.get(0))?;
+        assert_eq!(count, workers as i64);
         Ok(())
     }
 }
