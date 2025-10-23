@@ -1,5 +1,6 @@
 use crate::shared::types::{CallRequest, InspectionRunEvent, TargetDescriptor};
-use parking_lot::Mutex;
+use once_cell::sync::Lazy;
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use time::OffsetDateTime;
@@ -52,6 +53,20 @@ pub struct IdempotencyStore {
     external_refs: Mutex<HashMap<String, ExternalRecord>>,
 }
 
+type LockObserver = fn(&'static str, Duration);
+
+static LOCK_OBSERVER: Lazy<RwLock<Option<LockObserver>>> = Lazy::new(|| RwLock::new(None));
+
+fn record_lock_wait(component: &'static str, waited: Duration) {
+    if let Some(observer) = *LOCK_OBSERVER.read() {
+        observer(component, waited);
+    }
+}
+
+pub fn configure_lock_observer(observer: LockObserver) {
+    *LOCK_OBSERVER.write() = Some(observer);
+}
+
 pub enum ClaimOutcome {
     Accepted,
     InFlight,
@@ -67,7 +82,9 @@ impl IdempotencyStore {
     }
 
     pub fn claim(&self, key: &str) -> ClaimOutcome {
+        let wait = Instant::now();
         let mut store = self.records.lock();
+        record_lock_wait("idempotency_records", wait.elapsed());
         match store.get(key) {
             Some(Record::InFlight(_)) => ClaimOutcome::InFlight,
             Some(Record::Completed { event, .. }) => ClaimOutcome::Completed(event.clone()),
@@ -79,7 +96,9 @@ impl IdempotencyStore {
     }
 
     pub fn begin(&self, key: &str, run_id: uuid::Uuid, request: &CallRequest) {
+        let wait = Instant::now();
         let mut store = self.records.lock();
+        record_lock_wait("idempotency_records", wait.elapsed());
         let entry = store
             .entry(key.to_string())
             .or_insert_with(|| Record::InFlight(InFlightRecord::new()));
@@ -90,21 +109,27 @@ impl IdempotencyStore {
     }
 
     pub fn mark_started(&self, key: &str, started_at: OffsetDateTime) {
+        let wait = Instant::now();
         let mut store = self.records.lock();
+        record_lock_wait("idempotency_records", wait.elapsed());
         if let Some(Record::InFlight(record)) = store.get_mut(key) {
             record.started_at = Some(started_at);
         }
     }
 
     pub fn set_target(&self, key: &str, target: TargetDescriptor) {
+        let wait = Instant::now();
         let mut store = self.records.lock();
+        record_lock_wait("idempotency_records", wait.elapsed());
         if let Some(Record::InFlight(record)) = store.get_mut(key) {
             record.target = Some(target);
         }
     }
 
     pub fn complete(&self, key: &str, event: InspectionRunEvent) {
+        let wait = Instant::now();
         let mut store = self.records.lock();
+        record_lock_wait("idempotency_records", wait.elapsed());
         store.insert(
             key.to_string(),
             Record::Completed {
@@ -119,7 +144,9 @@ impl IdempotencyStore {
     }
 
     pub fn reap_expired(&self, ttl: Duration, now: OffsetDateTime) -> Vec<ReapedEvent> {
+        let wait = Instant::now();
         let mut store = self.records.lock();
+        record_lock_wait("idempotency_records", wait.elapsed());
         let mut expired: Vec<(String, InspectionRunEvent)> = Vec::new();
 
         store.retain(|key, record| match record {
@@ -152,7 +179,9 @@ impl IdempotencyStore {
         }
         drop(store);
 
+        let wait = Instant::now();
         let mut external = self.external_refs.lock();
+        record_lock_wait("idempotency_external", wait.elapsed());
         external.retain(|_, record| record.recorded_at.elapsed() <= ttl);
         drop(external);
 
@@ -166,12 +195,16 @@ impl IdempotencyStore {
     }
 
     pub fn find_external_ref(&self, reference: &str) -> Option<InspectionRunEvent> {
+        let wait = Instant::now();
         let store = self.external_refs.lock();
+        record_lock_wait("idempotency_external", wait.elapsed());
         store.get(reference).map(|record| record.event.clone())
     }
 
     pub fn record_external_ref(&self, reference: &str, event: InspectionRunEvent) {
+        let wait = Instant::now();
         let mut store = self.external_refs.lock();
+        record_lock_wait("idempotency_external", wait.elapsed());
         store.insert(
             reference.to_string(),
             ExternalRecord {

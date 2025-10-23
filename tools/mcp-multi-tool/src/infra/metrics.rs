@@ -8,10 +8,10 @@ use axum::{
 use axum_server::tls_rustls::RustlsConfig;
 use once_cell::sync::Lazy;
 use prometheus::{
-    Encoder, Histogram, IntCounter, IntGauge, TextEncoder, register_histogram,
-    register_int_counter, register_int_gauge,
+    Encoder, Histogram, HistogramVec, IntCounter, IntGauge, TextEncoder, register_histogram,
+    register_histogram_vec, register_int_counter, register_int_gauge,
 };
-use std::{net::SocketAddr, path::PathBuf};
+use std::{collections::HashMap, net::SocketAddr, path::PathBuf, time::Duration};
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 
@@ -46,6 +46,15 @@ pub static ERROR_BUDGET_FROZEN: Lazy<IntGauge> = Lazy::new(|| {
     register_int_gauge!(
         "error_budget_frozen",
         "1 when the inspector is in an error budget freeze"
+    )
+    .unwrap()
+});
+
+pub static LOCK_WAIT_HISTO: Lazy<HistogramVec> = Lazy::new(|| {
+    register_histogram_vec!(
+        "inspector_lock_wait_ms",
+        "Mutex lock wait duration in milliseconds",
+        &["component"]
     )
     .unwrap()
 });
@@ -182,4 +191,42 @@ pub fn record_reaper_timeout(count: usize) {
 
 pub fn set_error_budget_frozen(frozen: bool) {
     ERROR_BUDGET_FROZEN.set(if frozen { 1 } else { 0 });
+}
+
+pub fn observe_lock_wait(component: &'static str, duration: Duration) {
+    let ms = duration.as_secs_f64() * 1000.0;
+    LOCK_WAIT_HISTO.with_label_values(&[component]).observe(ms);
+    #[cfg(test)]
+    test_support::record_lock_wait(component, ms);
+}
+
+#[cfg(test)]
+mod test_support {
+    use super::*;
+    use once_cell::sync::Lazy;
+    use parking_lot::Mutex;
+
+    static LOCK_WAITS: Lazy<Mutex<HashMap<&'static str, Vec<f64>>>> =
+        Lazy::new(|| Mutex::new(HashMap::new()));
+
+    pub fn record_lock_wait(component: &'static str, ms: f64) {
+        LOCK_WAITS.lock().entry(component).or_default().push(ms);
+    }
+
+    pub fn take_lock_wait_records() -> HashMap<String, Vec<f64>> {
+        let mut map = LOCK_WAITS.lock();
+        let result = map.drain().map(|(k, v)| (k.to_string(), v)).collect();
+        result
+    }
+}
+
+pub fn take_lock_wait_records() -> HashMap<String, Vec<f64>> {
+    #[cfg(test)]
+    {
+        return test_support::take_lock_wait_records();
+    }
+    #[cfg(not(test))]
+    {
+        HashMap::new()
+    }
 }

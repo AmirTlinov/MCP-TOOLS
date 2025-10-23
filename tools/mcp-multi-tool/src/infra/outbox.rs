@@ -2,6 +2,7 @@ use crate::infra::metrics;
 use std::fs::{OpenOptions, create_dir_all};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use parking_lot::Mutex;
@@ -76,12 +77,16 @@ impl Outbox {
     pub fn append<T: Serialize>(&self, event: &T) -> Result<()> {
         let line = serde_json::to_string(event).context("serialize outbox event")?;
         let event_id = extract_event_id(event).unwrap_or_else(uuid::Uuid::new_v4);
+        let wait = Instant::now();
         let _guard = self.write_lock.lock();
+        metrics::observe_lock_wait("outbox_write_lock", wait.elapsed());
 
         let primary_result = match &self.backend {
             Backend::File { main_path } => Self::write_line(main_path, &line),
             Backend::Sqlite { conn } => {
+                let wait = Instant::now();
                 let conn = conn.lock();
+                metrics::observe_lock_wait("outbox_sqlite_conn", wait.elapsed());
                 conn.execute(
                     "INSERT INTO outbox_events (event_id, payload) VALUES (?1, ?2)",
                     params![event_id.to_string(), line],

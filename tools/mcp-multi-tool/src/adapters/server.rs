@@ -417,6 +417,7 @@ impl ServerHandler for InspectorServer {
                                     }
                                 }
                                 Err(report) => {
+                                    metrics::set_error_budget_frozen(true);
                                     run.fail();
                                     let duration_ms = timer.elapsed().as_millis() as u64;
                                     let payload = freeze_payload(&report);

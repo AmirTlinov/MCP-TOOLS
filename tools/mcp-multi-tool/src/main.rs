@@ -2,12 +2,17 @@ use anyhow::Result;
 use mcp_multi_tool::{
     adapters::server::InspectorServer,
     app::{
-        error_budget::{ErrorBudget, ErrorBudgetParams},
+        error_budget::{
+            ErrorBudget, ErrorBudgetParams,
+            configure_lock_observer as configure_error_budget_observer,
+        },
         inspector_service::InspectorService,
         registry::ToolRegistry,
     },
     infra::{config::AppConfig, metrics, outbox::Outbox},
-    shared::idempotency::IdempotencyStore,
+    shared::idempotency::{
+        IdempotencyStore, configure_lock_observer as configure_idempotency_observer,
+    },
 };
 use rmcp::{ServiceExt, transport::stdio};
 use std::{sync::Arc, time::Duration};
@@ -41,6 +46,9 @@ async fn main() -> Result<()> {
         }
         metrics::spawn_metrics_server(metrics_cfg).await;
     }
+
+    configure_idempotency_observer(metrics::observe_lock_wait);
+    configure_error_budget_observer(metrics::observe_lock_wait);
 
     let (outbox_main, outbox_dlq) = config.outbox_paths();
     let outbox = if let Some(db_path) = config.outbox_db_path() {

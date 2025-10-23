@@ -1,9 +1,9 @@
+use once_cell::sync::Lazy;
+use parking_lot::{Mutex, RwLock};
 use std::{
     collections::VecDeque,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
-
-use parking_lot::Mutex;
 
 #[derive(Debug, Clone)]
 pub struct ErrorBudgetParams {
@@ -51,6 +51,20 @@ pub struct ErrorBudget {
     state: Mutex<ErrorBudgetState>,
 }
 
+type LockObserver = fn(&'static str, Duration);
+
+static LOCK_OBSERVER: Lazy<RwLock<Option<LockObserver>>> = Lazy::new(|| RwLock::new(None));
+
+fn record_lock_wait(component: &'static str, waited: Duration) {
+    if let Some(observer) = *LOCK_OBSERVER.read() {
+        observer(component, waited);
+    }
+}
+
+pub fn configure_lock_observer(observer: LockObserver) {
+    *LOCK_OBSERVER.write() = Some(observer);
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum RecordOutcome {
     None,
@@ -84,7 +98,9 @@ impl ErrorBudget {
         if !self.params.enabled {
             return Ok(false);
         }
+        let wait = Instant::now();
         let mut state = self.state.lock();
+        record_lock_wait("error_budget_state", wait.elapsed());
         self.purge_old(now, &mut state);
         if let Some(until) = state.frozen_until {
             if now < until {
@@ -113,7 +129,9 @@ impl ErrorBudget {
         if !self.params.enabled {
             return RecordOutcome::None;
         }
+        let wait = Instant::now();
         let mut state = self.state.lock();
+        record_lock_wait("error_budget_state", wait.elapsed());
         self.purge_old(now, &mut state);
 
         let mut thawed = false;
