@@ -10,7 +10,9 @@ use tokio::time::sleep;
 
 use crate::{
     app::inspector_service::InspectorService,
-    shared::types::{DescribeRequest, HttpTarget, ProbeRequest, SseTarget, TargetTransportKind},
+    shared::types::{
+        CallRequest, DescribeRequest, HttpTarget, ProbeRequest, SseTarget, TargetTransportKind,
+    },
 };
 
 #[derive(Clone, Debug, Serialize, Default)]
@@ -134,6 +136,9 @@ impl ComplianceSuite {
             sleep(Duration::from_millis(200)).await;
         }
         if let Some(case) = self.call_stdio_case(&target).await? {
+            cases.push(case);
+        }
+        if let Some(case) = self.call_stdio_stream_case(&target).await? {
             cases.push(case);
         }
         if let Some(case) = self.call_sse_case(&target).await? {
@@ -413,6 +418,16 @@ impl ComplianceSuite {
             return Ok(None);
         };
         let timer = Instant::now();
+        let request = CallRequest {
+            tool_name: "help".into(),
+            arguments_json: json!({}),
+            idempotency_key: None,
+            stream: false,
+            external_reference: None,
+            stdio: None,
+            sse: None,
+            http: None,
+        };
         let outcome = self
             .svc
             .call_stdio(
@@ -420,8 +435,7 @@ impl ComplianceSuite {
                 target.args.clone(),
                 target.env.clone(),
                 target.cwd.clone(),
-                "help".into(),
-                json!({}),
+                &request,
             )
             .await;
         match outcome {
@@ -455,10 +469,17 @@ impl ComplianceSuite {
             headers: None,
             handshake_timeout_ms: Some(15_000),
         };
-        let outcome = self
-            .svc
-            .call_sse(&sse_target, "help".into(), json!({}))
-            .await;
+        let request = CallRequest {
+            tool_name: "help".into(),
+            arguments_json: json!({}),
+            idempotency_key: None,
+            stream: false,
+            external_reference: None,
+            stdio: None,
+            sse: None,
+            http: None,
+        };
+        let outcome = self.svc.call_sse(&sse_target, &request).await;
         Ok(Some(match outcome {
             Ok(res) => {
                 let passed = res.structured_content.is_some() || !res.content.is_empty();
@@ -489,10 +510,17 @@ impl ComplianceSuite {
             auth_token: target.http_auth_token.clone(),
             handshake_timeout_ms: Some(15_000),
         };
-        let outcome = self
-            .svc
-            .call_http(&http_target, "help".into(), json!({}))
-            .await;
+        let request = CallRequest {
+            tool_name: "help".into(),
+            arguments_json: json!({}),
+            idempotency_key: None,
+            stream: false,
+            external_reference: None,
+            stdio: None,
+            sse: None,
+            http: None,
+        };
+        let outcome = self.svc.call_http(&http_target, &request).await;
         Ok(Some(match outcome {
             Ok(res) => {
                 let passed = res.structured_content.is_some() || !res.content.is_empty();
@@ -510,6 +538,74 @@ impl ComplianceSuite {
                 detail: Some(json!({"error": err.to_string()})),
             },
         }))
+    }
+
+    async fn call_stdio_stream_case(
+        &self,
+        target: &ComplianceTarget,
+    ) -> Result<Option<CaseResult>> {
+        let Some(command) = target.command.as_ref() else {
+            return Ok(None);
+        };
+        let timer = Instant::now();
+        let request = CallRequest {
+            tool_name: "help".into(),
+            arguments_json: json!({}),
+            idempotency_key: None,
+            stream: true,
+            external_reference: None,
+            stdio: None,
+            sse: None,
+            http: None,
+        };
+        let outcome = self
+            .svc
+            .call_stdio(
+                command.clone(),
+                target.args.clone(),
+                target.env.clone(),
+                target.cwd.clone(),
+                &request,
+            )
+            .await;
+        match outcome {
+            Ok(res) => {
+                let payload = res.structured_content.as_ref().cloned().unwrap_or_default();
+                let mode = payload
+                    .get("mode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                let events = payload
+                    .get("events")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let has_final = events.iter().any(|event| {
+                    event
+                        .get("event")
+                        .and_then(|value| value.as_str())
+                        .map(|kind| kind == "final" || kind == "error")
+                        .unwrap_or(false)
+                });
+                let passed = mode == "stream" && !events.is_empty() && has_final;
+                Ok(Some(CaseResult {
+                    name: "call_help_stream".into(),
+                    passed,
+                    duration_ms: timer.elapsed().as_millis() as u64,
+                    detail: Some(json!({
+                        "mode": mode,
+                        "events": events,
+                        "snapshot": self.snapshot(&res)
+                    })),
+                }))
+            }
+            Err(err) => Ok(Some(CaseResult {
+                name: "call_help_stream".into(),
+                passed: false,
+                duration_ms: timer.elapsed().as_millis() as u64,
+                detail: Some(json!({"error": err.to_string()})),
+            })),
+        }
     }
 
     async fn probe_sse_case(&self, target: &ComplianceTarget) -> Result<Option<CaseResult>> {

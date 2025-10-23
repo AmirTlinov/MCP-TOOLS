@@ -78,6 +78,7 @@ Optional flags `--sse-url` and `--http-url` let you probe additional transports;
 - `OUTBOX_PATH` and `OUTBOX_DLQ_PATH` remain append-only exports for observability and recovery.
 - `IDEMPOTENCY_CONFLICT_POLICY` toggles duplicate behaviour (`return_existing` vs `409`).
 - `external_reference` (inspector_call argument) combines with idempotency to deduplicate upstream events across transports.
+- `stream` (inspector_call argument) enables capturing downstream progress events; the final payload exposes `mode: "stream"`, `events`, and the terminal response snapshot.
 
 ## License
 

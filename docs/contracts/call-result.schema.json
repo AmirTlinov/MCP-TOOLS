@@ -18,7 +18,70 @@
     "structured_content": {
       "type": ["object", "null"],
       "description": "Optional structured payload normalized by the downstream tool.",
-      "additionalProperties": true
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "mode": { "const": "stream" }
+            },
+            "required": ["mode"]
+          },
+          "then": {
+            "required": ["mode", "events", "final"],
+            "properties": {
+              "events": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/StreamEvent" }
+              },
+              "final": {
+                "type": ["object", "null"],
+                "description": "Terminal response snapshot as returned by the downstream tool."
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "StreamEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event"],
+      "properties": {
+        "event": {
+          "type": "string",
+          "description": "Event kind. Expected values: chunk, final, or error."
+        },
+        "progress": {
+          "type": "number",
+          "description": "Current progress position." 
+        },
+        "total": {
+          "type": "number",
+          "description": "Total work units if reported by the downstream tool."
+        },
+        "message": {
+          "type": "string",
+          "description": "Optional textual note accompanying the progress event."
+        },
+        "structured": {
+          "type": ["object", "null"],
+          "description": "Downstream structured payload for the current chunk, if any.",
+          "additionalProperties": true
+        },
+        "content": {
+          "description": "Raw RMCP content emitted with the chunk.",
+          "type": ["object", "array", "string", "number", "boolean", "null"],
+          "additionalProperties": true
+        },
+        "error": {
+          "type": "string",
+          "description": "Error message if the chunk represents a failure." 
+        }
+      }
     }
   }
 }

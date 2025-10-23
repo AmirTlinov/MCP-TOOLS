@@ -6,7 +6,7 @@ use time::OffsetDateTime;
 
 use crate::{
     app::{inspector_service::InspectorService, registry::ToolRegistry},
-    domain::run::InspectionRun,
+    domain::run::{InspectionRun, RunState},
     infra::{config::IdempotencyConflictPolicy, outbox::Outbox},
     shared::{
         idempotency::{ClaimOutcome, IdempotencyStore},
@@ -183,6 +183,7 @@ impl ServerHandler for InspectorServer {
                       "quick_start": [
                         {"tool":"inspector_probe","arguments":{"transport":"stdio","command":"uvx","args":["mcp-server-git"]},"expect":{"ok":true}},
                         {"tool":"inspector_list_tools","arguments":{"transport":"stdio","command":"uvx","args":["mcp-server-git"]},"expect":{"tools_min":1}},
+                        {"tool":"inspector_call","arguments":{"tool_name":"help","arguments_json":{},"stream":true,"stdio":{"command":"uvx","args":["mcp-server-git"]}},"expect":{"mode":"stream"}},
                         {"tool":"inspector_describe","arguments":{"tool_name":"help","transport":"stdio","command":"uvx","args":["mcp-server-git"]},"expect":{"name":"help"}},
                         {"tool":"inspector_call","env":{"INSPECTOR_STDIO_CMD":"uvx mcp-server-git"},"arguments":{"tool_name":"git_status","arguments_json":{"repo_path":"."}},"expect":{"structured_or_text":true}}
                       ],
@@ -260,6 +261,7 @@ impl ServerHandler for InspectorServer {
                           "params_table": [
                             {"name":"tool_name","type":"string","required":true,"default":null,"desc":"Tool name on the target server"},
                             {"name":"arguments_json","type":"object","required":true,"default":{},"desc":"Tool arguments"},
+                            {"name":"stream","type":"boolean","required":false,"default":false,"desc":"Enable streaming mode to capture progress chunks plus final payload"},
                             {"name":"stdio","type":"object","required":false,"default":null,"desc":"Override stdio target: {command,args,env?,cwd?}"},
                             {"name":"sse","type":"object","required":false,"default":null,"desc":"SSE override: {url,headers?,handshake_timeout_ms?}"},
                             {"name":"http","type":"object","required":false,"default":null,"desc":"HTTP override: {url,headers?,auth_token?,handshake_timeout_ms?}"}
@@ -270,7 +272,8 @@ impl ServerHandler for InspectorServer {
                       },
                       "notes": {
                         "http_auth": "HTTP transport accepts Bearer tokens via ProbeRequest.auth_token.",
-                        "sse_auth": "rmcp 0.8.1 lacks public support for SSE tokens; use HTTP transport if auth is required."
+                        "sse_auth": "rmcp 0.8.1 lacks public support for SSE tokens; use HTTP transport if auth is required.",
+                        "streaming": "Set 'stream': true to receive progress chunks ('event' = 'chunk') followed by a final event in the structured payload."
                       },
                       "errors": [
                         {"code":"MISSING_COMMAND","tool":"inspector_list_tools","reason":"command was not provided for stdio","action":"Pass command (and args if needed) or set INSPECTOR_STDIO_CMD"},
@@ -379,20 +382,14 @@ impl ServerHandler for InspectorServer {
                             if let Some(key) = claimed_key.as_ref() {
                                 this.idempotency.mark_started(key, started_at);
                             }
-                            let call_outcome = if let Some(http) = req.http.as_ref() {
+                            let call_result = if let Some(http) = req.http.as_ref() {
                                 target_descriptor.transport = "http".into();
                                 target_descriptor.url = Some(http.url.clone());
                                 target_descriptor.headers = http.headers.clone();
                                 if let Some(key) = claimed_key.as_ref() {
                                     this.idempotency.set_target(key, target_descriptor.clone());
                                 }
-                                this.svc
-                                    .call_http(
-                                        http,
-                                        req.tool_name.clone(),
-                                        req.arguments_json.clone(),
-                                    )
-                                    .await
+                                this.svc.call_http(http, &req).await
                             } else if let Some(sse) = req.sse.as_ref() {
                                 target_descriptor.transport = "sse".into();
                                 target_descriptor.url = Some(sse.url.clone());
@@ -400,13 +397,7 @@ impl ServerHandler for InspectorServer {
                                 if let Some(key) = claimed_key.as_ref() {
                                     this.idempotency.set_target(key, target_descriptor.clone());
                                 }
-                                this.svc
-                                    .call_sse(
-                                        sse,
-                                        req.tool_name.clone(),
-                                        req.arguments_json.clone(),
-                                    )
-                                    .await
+                                this.svc.call_sse(sse, &req).await
                             } else if let Some(target) = req.stdio.as_ref() {
                                 target_descriptor.transport = "stdio".into();
                                 target_descriptor.command = Some(target.command.clone());
@@ -419,8 +410,7 @@ impl ServerHandler for InspectorServer {
                                         target.args.clone(),
                                         target.env.clone(),
                                         target.cwd.clone(),
-                                        req.tool_name.clone(),
-                                        req.arguments_json.clone(),
+                                        &req,
                                     )
                                     .await
                             } else {
@@ -446,22 +436,22 @@ impl ServerHandler for InspectorServer {
                                 match fallback {
                                     Ok((program, args)) => {
                                         this.svc
-                                            .call_stdio(
-                                                program.clone(),
-                                                args,
-                                                None,
-                                                None,
-                                                req.tool_name.clone(),
-                                                req.arguments_json.clone(),
-                                            )
+                                            .call_stdio(program.clone(), args, None, None, &req)
                                             .await
                                     }
                                     Err(err) => return Ok(err),
                                 }
                             };
-                            match call_outcome {
+                            match call_result {
                                 Ok(res) => {
-                                    run.capture();
+                                    if matches!(run.state, RunState::Processing) {
+                                        run.capture();
+                                    } else {
+                                        tracing::warn!(
+                                            state = run.state.as_str(),
+                                            "run not in processing state at success"
+                                        );
+                                    }
                                     let duration_ms = timer.elapsed().as_millis() as u64;
                                     if let Some(meta_ref) = extract_external_reference(&res) {
                                         external_reference = Some(meta_ref);
@@ -524,7 +514,6 @@ impl ServerHandler for InspectorServer {
 
             match result {
                 Ok(success) => {
-                    run.capture();
                     tracing::info!(%run_id, tool = %request.name, "call_tool success");
                     Ok(success)
                 }

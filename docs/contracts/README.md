@@ -16,3 +16,20 @@ Use `ajv` or `jsonschema` CLI to validate payloads:
 ```bash
 npx ajv validate -s docs/contracts/probe-result.schema.json -d payload.json
 ```
+
+### Streaming Call Results
+
+When `inspector_call` runs with `{ "stream": true }`, the `structured_content` field is normalised into the shape:
+
+```json
+{
+  "mode": "stream",
+  "events": [
+    { "event": "chunk", "progress": 1, "total": 2, "message": "chunk 1" },
+    { "event": "final", "structured": {"status": "complete"} }
+  ],
+  "final": { "status": "complete" }
+}
+```
+
+Each entry in `events` follows the `StreamEvent` definition inside `call-result.schema.json` and mirrors progress notifications emitted by the downstream MCP tool.

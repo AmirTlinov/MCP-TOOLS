@@ -34,7 +34,7 @@ impl ToolRegistry {
             ),
             Tool::new(
                 "inspector_call",
-                "Call a target MCP tool via stdio/SSE/HTTP transports.",
+                "Call a target MCP tool via stdio/SSE/HTTP transports with optional streaming progress.",
                 schema_for::<Parameters<crate::shared::types::CallRequest>>(),
             ),
         ]

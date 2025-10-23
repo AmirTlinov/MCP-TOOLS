@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
+use futures::StreamExt;
 use rmcp::{
-    ServiceExt,
+    ClientHandler, RoleClient, ServiceExt,
+    handler::client::progress::ProgressDispatcher,
     model::*,
+    service::PeerRequestOptions,
     transport::{
         child_process::TokioChildProcess, sse_client::SseClientTransport,
         streamable_http_client::StreamableHttpClientTransport,
@@ -14,7 +17,8 @@ use crate::{
     infra::metrics::{LATENCY_HISTO, PendingGaugeGuard},
     shared::{
         types::{
-            DescribeRequest, HttpTarget, ProbeRequest, ProbeResult, SseTarget, TargetTransportKind,
+            CallRequest, DescribeRequest, HttpTarget, ProbeRequest, ProbeResult, SseTarget,
+            StreamEvent, TargetTransportKind,
         },
         utils::{measure_latency, parse_command},
     },
@@ -22,6 +26,33 @@ use crate::{
 
 #[derive(Clone, Default)]
 pub struct InspectorService;
+
+#[derive(Clone, Default)]
+struct InspectorClient {
+    progress_handler: ProgressDispatcher,
+}
+
+impl InspectorClient {
+    fn new() -> Self {
+        Self {
+            progress_handler: ProgressDispatcher::new(),
+        }
+    }
+
+    fn dispatcher(&self) -> ProgressDispatcher {
+        self.progress_handler.clone()
+    }
+}
+
+impl ClientHandler for InspectorClient {
+    fn on_progress(
+        &self,
+        params: ProgressNotificationParam,
+        _context: rmcp::service::NotificationContext<RoleClient>,
+    ) -> impl std::future::Future<Output = ()> + Send + '_ {
+        self.progress_handler.handle_notification(params)
+    }
+}
 
 impl InspectorService {
     pub fn new() -> Self {
@@ -282,8 +313,7 @@ impl InspectorService {
         args: Vec<String>,
         env: Option<BTreeMap<String, String>>,
         cwd: Option<String>,
-        tool_name: String,
-        arguments_json: serde_json::Value,
+        request: &CallRequest,
     ) -> Result<CallToolResult> {
         let _pending = PendingGaugeGuard::new();
         let mut cmd = Command::new(command);
@@ -296,21 +326,15 @@ impl InspectorService {
         if let Some(cwd) = cwd {
             cmd.current_dir(cwd);
         }
-        let client = ().serve(TokioChildProcess::new(cmd)?).await?;
-        let res = client
-            .call_tool(rmcp::model::CallToolRequestParam {
-                name: tool_name.into(),
-                arguments: arguments_json.as_object().cloned(),
-            })
-            .await?;
-        Ok(res)
+        let handler = InspectorClient::new();
+        let client = handler.serve(TokioChildProcess::new(cmd)?).await?;
+        self.invoke_call(client, request).await
     }
 
     pub async fn call_sse(
         &self,
         target: &SseTarget,
-        tool_name: String,
-        arguments_json: serde_json::Value,
+        request: &CallRequest,
     ) -> Result<CallToolResult> {
         let _pending = PendingGaugeGuard::new();
         let url = target.url.clone();
@@ -319,24 +343,18 @@ impl InspectorService {
         }
         let handshake_timeout =
             Duration::from_millis(target.handshake_timeout_ms.unwrap_or(15_000));
+        let handler = InspectorClient::new();
         let transport = SseClientTransport::start(url).await?;
-        let client = timeout(handshake_timeout, ().serve(transport))
+        let client = timeout(handshake_timeout, handler.serve(transport))
             .await
             .map_err(|_| anyhow::anyhow!("sse handshake timed out"))??;
-        let res = client
-            .call_tool(CallToolRequestParam {
-                name: tool_name.into(),
-                arguments: arguments_json.as_object().cloned(),
-            })
-            .await?;
-        Ok(res)
+        self.invoke_call(client, request).await
     }
 
     pub async fn call_http(
         &self,
         target: &HttpTarget,
-        tool_name: String,
-        arguments_json: serde_json::Value,
+        request: &CallRequest,
     ) -> Result<CallToolResult> {
         let _pending = PendingGaugeGuard::new();
         let url = target.url.clone();
@@ -353,16 +371,106 @@ impl InspectorService {
         let transport = StreamableHttpClientTransport::with_client(reqwest::Client::new(), cfg);
         let handshake_timeout =
             Duration::from_millis(target.handshake_timeout_ms.unwrap_or(15_000));
-        let client = timeout(handshake_timeout, ().serve(transport))
+        let handler = InspectorClient::new();
+        let client = timeout(handshake_timeout, handler.serve(transport))
             .await
             .map_err(|_| anyhow::anyhow!("http handshake timed out"))??;
-        let res = client
-            .call_tool(CallToolRequestParam {
-                name: tool_name.into(),
-                arguments: arguments_json.as_object().cloned(),
-            })
+        self.invoke_call(client, request).await
+    }
+}
+
+impl InspectorService {
+    async fn invoke_call(
+        &self,
+        client: rmcp::service::RunningService<RoleClient, InspectorClient>,
+        request: &CallRequest,
+    ) -> Result<CallToolResult> {
+        let params = CallToolRequestParam {
+            name: request.tool_name.clone().into(),
+            arguments: request.arguments_json.as_object().cloned(),
+        };
+        if request.stream {
+            self.call_with_stream(client, params).await
+        } else {
+            let res = client.call_tool(params).await?;
+            Ok(res)
+        }
+    }
+
+    async fn call_with_stream(
+        &self,
+        client: rmcp::service::RunningService<RoleClient, InspectorClient>,
+        params: CallToolRequestParam,
+    ) -> Result<CallToolResult> {
+        let dispatcher = client.service().dispatcher();
+        let handle = client
+            .send_cancellable_request(
+                ClientRequest::CallToolRequest(Request::new(params)),
+                PeerRequestOptions::no_options(),
+            )
             .await?;
-        Ok(res)
+        let progress_token = handle.progress_token.clone();
+        let mut progress_stream = dispatcher.subscribe(progress_token).await;
+
+        let response = handle.await_response().await?;
+        let mut final_result = match response {
+            ServerResult::CallToolResult(result) => result,
+            other => {
+                return Err(anyhow::anyhow!("unexpected server response: {:?}", other));
+            }
+        };
+
+        let mut events: Vec<StreamEvent> = Vec::new();
+        loop {
+            match tokio::time::timeout(Duration::from_millis(25), progress_stream.next()).await {
+                Ok(Some(progress)) => events.push(progress_to_event(progress)),
+                Ok(None) => break,
+                Err(_) => break,
+            }
+        }
+
+        events.push(result_to_event(&final_result));
+        let final_snapshot = serde_json::to_value(&final_result).ok();
+        final_result.structured_content = Some(serde_json::json!({
+            "mode": "stream",
+            "events": events,
+            "final": final_snapshot,
+        }));
+
+        Ok(final_result)
+    }
+}
+
+fn progress_to_event(progress: ProgressNotificationParam) -> StreamEvent {
+    StreamEvent {
+        event: "chunk".into(),
+        progress: Some(progress.progress),
+        total: progress.total,
+        message: progress.message,
+        structured: None,
+        content: None,
+        error: None,
+    }
+}
+
+fn result_to_event(result: &CallToolResult) -> StreamEvent {
+    let is_error = result.is_error.unwrap_or(false);
+    StreamEvent {
+        event: if is_error {
+            "error".into()
+        } else {
+            "final".into()
+        },
+        progress: None,
+        total: None,
+        message: None,
+        structured: result.structured_content.clone(),
+        content: serde_json::to_value(&result.content).ok(),
+        error: if is_error {
+            Some("tool execution failed".into())
+        } else {
+            None
+        },
     }
 }
 

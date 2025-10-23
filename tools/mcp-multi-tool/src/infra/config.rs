@@ -266,15 +266,29 @@ mod tests {
     #[test]
     fn load_from_dir_without_files_uses_defaults() -> Result<()> {
         let dir = tempdir()?;
-        let cfg = AppConfig::load_from_dir(dir.path())?;
-        assert!(cfg.metrics_addr.is_none());
-        assert_eq!(
-            cfg.idempotency_conflict_policy,
-            IdempotencyConflictPolicy::Conflict409
+        with_env(
+            &[
+                ("METRICS_ADDR", None),
+                ("ALLOW_INSECURE_METRICS_DEV", None),
+                ("METRICS_AUTH_TOKEN", None),
+                ("METRICS_TLS_CERT_PATH", None),
+                ("METRICS_TLS_KEY_PATH", None),
+                ("OUTBOX_PATH", None),
+                ("OUTBOX_DLQ_PATH", None),
+                ("OUTBOX_DB_PATH", None),
+            ],
+            || {
+                let cfg = AppConfig::load_from_dir(dir.path()).expect("config load");
+                assert!(cfg.metrics_addr.is_none());
+                assert_eq!(
+                    cfg.idempotency_conflict_policy,
+                    IdempotencyConflictPolicy::Conflict409
+                );
+                let (main, dlq) = cfg.outbox_paths();
+                assert_eq!(main, PathBuf::from("data/outbox/events.jsonl"));
+                assert_eq!(dlq, PathBuf::from("data/outbox/dlq.jsonl"));
+            },
         );
-        let (main, dlq) = cfg.outbox_paths();
-        assert_eq!(main, PathBuf::from("data/outbox/events.jsonl"));
-        assert_eq!(dlq, PathBuf::from("data/outbox/dlq.jsonl"));
         Ok(())
     }
 

@@ -78,5 +78,43 @@ async fn list_tools_and_help() -> Result<()> {
         .and_then(|name| name.as_str())
         .unwrap_or_default();
     assert_eq!(described, "help");
+
+    let stream_args = json!({
+        "tool_name": "stream",
+        "arguments_json": {},
+        "stream": true,
+        "stdio": {
+            "command": mock.display().to_string(),
+            "args": []
+        }
+    });
+    let stream_resp = service
+        .call_tool(CallToolRequestParam {
+            name: "inspector_call".into(),
+            arguments: Some(stream_args.as_object().cloned().unwrap()),
+        })
+        .await?;
+    let stream_payload = stream_resp
+        .structured_content
+        .expect("stream structured payload");
+    assert_eq!(
+        stream_payload
+            .get("mode")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default(),
+        "stream"
+    );
+    let events = stream_payload
+        .get("events")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(events.iter().any(|event| {
+        event
+            .get("event")
+            .and_then(|value| value.as_str())
+            .map(|kind| kind == "final" || kind == "error")
+            .unwrap_or(false)
+    }));
     Ok(())
 }

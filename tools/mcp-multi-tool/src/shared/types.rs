@@ -44,6 +44,8 @@ pub struct CallRequest {
     pub tool_name: String,
     pub arguments_json: serde_json::Value,
     pub idempotency_key: Option<String>,
+    #[serde(default)]
+    pub stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_reference: Option<String>,
     // optional stdio target overrides (takes precedence over environment defaults)
@@ -127,4 +129,21 @@ pub struct InspectionRunEvent {
     pub idempotency_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_reference: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StreamEvent {
+    pub event: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub structured: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }

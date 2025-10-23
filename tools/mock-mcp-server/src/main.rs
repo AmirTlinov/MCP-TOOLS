@@ -1,4 +1,4 @@
-use std::{env, net::SocketAddr};
+use std::{env, net::SocketAddr, time::Duration};
 
 use anyhow::Result;
 use axum::Router;
@@ -13,7 +13,7 @@ use rmcp::{
         },
     },
 };
-use tokio::{net::TcpListener, signal};
+use tokio::{net::TcpListener, signal, time::sleep};
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
@@ -43,10 +43,18 @@ impl MockServer {
                 "Sum a list of numbers and return the total.",
                 schema_for::<Parameters<MockAddArgs>>(),
             ),
+            rmcp::model::Tool::new(
+                "stream",
+                "Emit progress notifications followed by a final structured payload.",
+                schema_for::<Parameters<MockStreamArgs>>(),
+            ),
         ]
     }
 
-    fn call_tool(&self, request: rmcp::model::CallToolRequestParam) -> rmcp::model::CallToolResult {
+    fn handle_simple_tool(
+        &self,
+        request: rmcp::model::CallToolRequestParam,
+    ) -> rmcp::model::CallToolResult {
         match request.name.as_ref() {
             "help" => {
                 let description = serde_json::json!({
@@ -104,6 +112,16 @@ struct MockAddArgs {
     values: Vec<f64>,
 }
 
+#[derive(Debug, Clone, Default, serde::Deserialize, JsonSchema)]
+struct MockStreamArgs {
+    #[serde(default = "default_stream_chunks")]
+    chunks: u32,
+}
+
+fn default_stream_chunks() -> u32 {
+    2
+}
+
 impl rmcp::ServerHandler for MockServer {
     fn initialize(
         &self,
@@ -153,12 +171,47 @@ impl rmcp::ServerHandler for MockServer {
     fn call_tool(
         &self,
         request: rmcp::model::CallToolRequestParam,
-        _context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
+        context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
     ) -> impl std::future::Future<Output = Result<rmcp::model::CallToolResult, rmcp::ErrorData>>
     + Send
     + '_ {
-        let response = self.call_tool(request);
-        async move { Ok(response) }
+        let server = self.clone();
+        async move {
+            if request.name.as_ref() == "stream" {
+                let args = request
+                    .arguments
+                    .as_ref()
+                    .and_then(|map| {
+                        serde_json::from_value::<MockStreamArgs>(serde_json::Value::Object(
+                            map.clone(),
+                        ))
+                        .ok()
+                    })
+                    .unwrap_or_default();
+                if let Some(token) = context.meta.get_progress_token() {
+                    let chunks = args.chunks.max(1);
+                    for idx in 0..chunks {
+                        let _ = context
+                            .peer
+                            .notify_progress(rmcp::model::ProgressNotificationParam {
+                                progress_token: token.clone(),
+                                progress: (idx + 1) as f64,
+                                total: Some(chunks as f64),
+                                message: Some(format!("chunk {}", idx + 1)),
+                            })
+                            .await;
+                        sleep(Duration::from_millis(25)).await;
+                    }
+                }
+                Ok(rmcp::model::CallToolResult::structured(serde_json::json!({
+                    "status": "complete",
+                    "chunks": args.chunks.max(1),
+                })))
+            } else {
+                let response = server.handle_simple_tool(request);
+                Ok(response)
+            }
+        }
     }
 }
 

@@ -110,6 +110,7 @@ fn reaper_emits_failure_event() {
         tool_name: "demo".into(),
         arguments_json: json!({}),
         idempotency_key: Some(key.into()),
+        stream: false,
         external_reference: Some("ext-demo".into()),
         stdio: None,
         sse: None,
