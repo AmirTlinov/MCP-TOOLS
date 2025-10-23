@@ -30,15 +30,15 @@ Format: `<ID> — <concise action> — DoD`. Every item maps to a T-ID.
 - [ ] T-0030 — Real-world E2E example — DoD: ≥90% pass with report attached.
 
 ## 4. Reliability & Idempotency (WS-004)
-- [ ] T-0014 — Idempotency (CLAIM + key) — DoD: property tests stable 3×100 runs.
+- [x] T-0014 — Idempotency (CLAIM + key) — DoD: property tests stable 3×100 runs.
 - [~] T-0031 — Transactional Outbox — DoD: zero loss during crash tests.
-- [ ] T-0032 — Reaper TTL = 60s — DoD: stuck→failed, event + metric emitted.
-- [ ] T-0033 — Compensation `external_ref_unique` — DoD: compensation scenarios green.
+- [x] T-0032 — Reaper TTL = 60s — DoD: stuck→failed, event + metric emitted.
+- [x] T-0033 — Compensation `external_ref_unique` — DoD: compensation scenarios green.
 
 ## 5. Observability & SLO (WS-005)
-- [ ] T-0017 — Latency metrics p50/p95/p99 — DoD: Prometheus scrape works.
-- [ ] T-0018 — `/metrics` with Auth + TLS (+dev flag) — DoD: denied without auth; dev override works.
-- [ ] T-0019 — Logs/trace with correlation IDs — DoD: structured logging validated.
+- [x] T-0017 — Latency metrics p50/p95/p99 — DoD: Prometheus scrape works.
+- [x] T-0018 — `/metrics` with Auth + TLS (+dev flag) — DoD: denied without auth; dev override works.
+- [x] T-0019 — Logs/trace with correlation IDs — DoD: structured logging validated.
 - [ ] T-0035 — Error budget freeze — DoD: gate trips in CI when SLO breached.
 
 ## 6. Contracts & Docs (WS-006)
@@ -49,12 +49,12 @@ Format: `<ID> — <concise action> — DoD`. Every item maps to a T-ID.
 ## 7. Quality Gates (WS-007)
 - [x] T-0022 — CI coverage gate 85% — DoD: pipeline fails under threshold.
 - [x] T-0023 — Mock MCP server — DoD: E2E harness ready.
-- [ ] T-0024 — Property tests for idempotency — DoD: 3×100 seeds stable.
+- [x] T-0024 — Property tests for idempotency — DoD: 3×100 seeds stable.
 - [ ] T-0025 — Race tests — DoD: lock wait p99 ≤50ms.
 - [ ] T-0026 — Crash/edge harness — DoD: zero panics across runs.
-- [ ] T-0036 — ACL/dependency rules — DoD: CI fails on violations.
+- [x] T-0036 — ACL/dependency rules — DoD: CI fails on violations.
 - [x] T-0037 — Lint/security audits — DoD: zero critical findings.
-- [ ] T-0038 — Architecture tests — DoD: zero dependency cycles.
+- [x] T-0038 — Architecture tests — DoD: zero dependency cycles.
 
 ## 8. Release & Ops (WS-008)
 - [x] T-0028 — Release artifacts (Linux/macOS/Windows) — DoD: downloadable binaries run.

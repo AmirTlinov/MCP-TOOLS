@@ -34,6 +34,7 @@ rmcp = { version = "=0.8.1", features = [
     "transport-streamable-http-client-reqwest"
 ] }
 axum = { version = "0.7", default-features = false, features = ["http1", "http2", "json", "tokio"] }
+axum-server = { version = "0.6", features = ["tls-rustls"] }
 hyper = { version = "1", features = ["full"] }
 http = "1"
 serde_with = "3"
@@ -54,3 +55,5 @@ serde_json = "1"
 rstest = "0.22"
 assert_cmd = "2"
 tempfile = "3"
+proptest = "1"
+walkdir = "2"

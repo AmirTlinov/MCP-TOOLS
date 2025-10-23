@@ -71,9 +71,13 @@ Optional flags `--sse-url` and `--http-url` let you probe additional transports;
 - `config/default.toml` provides baseline settings (metrics, outbox paths) that travel with the binary.
 - `APP_CONFIG_PROFILE` selects an additional `config/<profile>.toml` overlay (default profile: `default`).
 - `APP_CONFIG_DIR` overrides the configuration directory when embedding inside another bundle.
+- `METRICS_AUTH_TOKEN` issues a mandatory Bearer token for `/metrics` (omit only when `ALLOW_INSECURE_METRICS_DEV=true`).
+- `METRICS_TLS_CERT_PATH` and `METRICS_TLS_KEY_PATH` enable built-in TLS termination for `/metrics`; otherwise terminate TLS upstream.
+- `ALLOW_INSECURE_METRICS_DEV=true` relaxes TLS/auth for local development only.
 - `OUTBOX_DB_PATH` switches the outbox to a durable sqlite store (falls back to JSONL when unset).
 - `OUTBOX_PATH` and `OUTBOX_DLQ_PATH` remain append-only exports for observability and recovery.
 - `IDEMPOTENCY_CONFLICT_POLICY` toggles duplicate behaviour (`return_existing` vs `409`).
+- `external_reference` (inspector_call argument) combines with idempotency to deduplicate upstream events across transports.
 
 ## License
 

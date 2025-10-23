@@ -3,23 +3,24 @@
 ## Endpoint
 - Path: `/metrics`
 - Format: Prometheus text exposition
-- Auth: Basic or Bearer as defined by reverse proxy; disabled only when `ALLOW_INSECURE_METRICS_DEV=true`
-- TLS: Required in production; run behind TLS-terminating proxy or enable native TLS (future work)
+- Auth: Built-in Bearer token via `METRICS_AUTH_TOKEN`; disabled only when `ALLOW_INSECURE_METRICS_DEV=true`
+- TLS: Native TLS when `METRICS_TLS_CERT_PATH` + `METRICS_TLS_KEY_PATH` provided, otherwise terminate in front of the binary
 
 ## Gauges
 | Metric | Type | Description | Labels |
 | --- | --- | --- | --- |
-| `mcp_multitool_pending_gauge` | gauge | Number of in-flight inspector operations (probe/list/call). | `operation` (probe|list|call) |
+| `inspector_inflight` | gauge | Concurrent inspector operations across transports. | — |
+| `outbox_backlog` | gauge | Total events persisted in the transactional outbox (JSONL or sqlite). | — |
 
 ## Histograms
 | Metric | Buckets | Description | Labels |
 | --- | --- | --- | --- |
-| `mcp_multitool_latency_ms` | [50, 100, 200, 500, 1000, +Inf] | Measured time for outbound operations, aligned with `gateway_calls/logical_charges`. | `operation`, `transport` |
+| `inspector_latency_ms` | default Prometheus buckets | Measured time for outbound operations, aligned with `gateway_calls/logical_charges`. | `operation`, `transport` |
 
-## Counters (planned)
+## Counters
 | Metric | Description | Trigger |
 | --- | --- | --- |
-| `mcp_multitool_outbox_replays_total` | Count of replayed outbox entries after failures. | Emitted once transactional outbox is wired. |
+| `idempotency_timeouts_total` | Count of inspection runs failed by the 60s reaper. | Incremented whenever the reaper marks an in-flight run as timed out. |
 
 ## Alerts
 - **Outbox backlog**: fire when backlog > 1000 for >10m.
@@ -35,5 +36,5 @@ mcp_multitool_latency_ms_bucket{operation="call",transport="stdio",le="50"} 4
 ```
 
 ## Testing
-- Integration tests should stub `ALLOW_INSECURE_METRICS_DEV=true` to expose `/metrics` without TLS.
-- CI jobs may lint output using `promtool check metrics` once outbox metrics land.
+- Integration tests may stub `ALLOW_INSECURE_METRICS_DEV=true` to expose `/metrics` without TLS/Bearer.
+- CI jobs may lint output using `promtool check metrics` to ensure exposition compatibility.

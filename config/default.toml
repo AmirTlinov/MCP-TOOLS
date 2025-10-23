@@ -3,6 +3,9 @@
 
 metrics_addr = "127.0.0.1:9200"
 allow_insecure_metrics_dev = false
+# metrics_auth_token = "change-me"
+# metrics_tls_cert_path = "config/certs/multitool.crt"
+# metrics_tls_key_path = "config/certs/multitool.key"
 outbox_path = "data/outbox/events.jsonl"
 outbox_dlq_path = "data/outbox/dlq.jsonl"
 idempotency_conflict_policy = "conflict_409"

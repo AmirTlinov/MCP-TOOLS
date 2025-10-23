@@ -44,6 +44,8 @@ pub struct CallRequest {
     pub tool_name: String,
     pub arguments_json: serde_json::Value,
     pub idempotency_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_reference: Option<String>,
     // optional stdio target overrides (takes precedence over environment defaults)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stdio: Option<StdioTarget>,
@@ -121,4 +123,8 @@ pub struct InspectionRunEvent {
     pub response: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_reference: Option<String>,
 }

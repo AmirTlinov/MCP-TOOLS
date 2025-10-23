@@ -6,7 +6,8 @@ use mcp_multi_tool::{
     shared::idempotency::IdempotencyStore,
 };
 use rmcp::{ServiceExt, transport::stdio};
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
+use time::OffsetDateTime;
 use tokio::time::sleep;
 use tracing_subscriber::{EnvFilter, fmt};
 
@@ -22,16 +23,19 @@ async fn main() -> Result<()> {
         .init();
 
     let config = AppConfig::load()?;
-    if let Some(addr_str) = &config.metrics_addr {
-        match addr_str.parse::<SocketAddr>() {
-            Ok(addr) => {
-                if config.allow_insecure_metrics_dev.unwrap_or(false) {
-                    tracing::warn!(%addr, "metrics server running without TLS (dev override)");
-                }
-                metrics::spawn_metrics_server(addr).await;
-            }
-            Err(error) => tracing::warn!(%addr_str, %error, "invalid METRICS_ADDR"),
+    if let Some(metrics_cfg) = config.metrics_server_config()? {
+        if metrics_cfg.allow_insecure && metrics_cfg.tls.is_none() {
+            tracing::warn!(
+                addr = %metrics_cfg.addr,
+                "metrics server running without TLS (dev override)"
+            );
+        } else if metrics_cfg.auth_token.is_none() {
+            tracing::warn!(
+                addr = %metrics_cfg.addr,
+                "metrics auth token missing; set METRICS_AUTH_TOKEN for production"
+            );
         }
+        metrics::spawn_metrics_server(metrics_cfg).await;
     }
 
     let (outbox_main, outbox_dlq) = config.outbox_paths();
@@ -44,12 +48,26 @@ async fn main() -> Result<()> {
     let idempotency = Arc::new(IdempotencyStore::new());
     {
         let store = idempotency.clone();
+        let outbox = outbox.clone();
         tokio::spawn(async move {
             let ttl = Duration::from_secs(60);
             let cadence = Duration::from_secs(30);
             loop {
                 sleep(cadence).await;
-                store.reap_expired(ttl);
+                let reaped = store.reap_expired(ttl, OffsetDateTime::now_utc());
+                if reaped.is_empty() {
+                    continue;
+                }
+                metrics::record_reaper_timeout(reaped.len());
+                for item in &reaped {
+                    if let Err(err) = outbox.append(&item.event) {
+                        tracing::error!(
+                            key = %item.idempotency_key,
+                            %err,
+                            "failed to append reaper event to outbox"
+                        );
+                    }
+                }
             }
         });
     }

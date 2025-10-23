@@ -75,6 +75,7 @@ impl InspectorServer {
         target: Option<TargetDescriptor>,
         response: Option<Value>,
         error: Option<String>,
+        external_reference: Option<String>,
     ) -> InspectionRunEvent {
         let started_at_str = started_at.to_string();
         InspectionRunEvent {
@@ -88,6 +89,8 @@ impl InspectorServer {
             request: serde_json::to_value(request).ok(),
             response,
             error,
+            idempotency_key: request.idempotency_key.clone(),
+            external_reference,
         }
     }
 
@@ -323,10 +326,29 @@ impl ServerHandler for InspectorServer {
                                 url: None,
                                 headers: None,
                             };
+                            let mut external_reference = req.external_reference.clone();
+                            if let Some(ref ext) = external_reference {
+                                if let Some(existing) = this.idempotency.find_external_ref(ext) {
+                                    return match this.conflict_policy {
+                                        IdempotencyConflictPolicy::ReturnExisting => {
+                                            run.capture();
+                                            Ok(this.return_existing_event(existing))
+                                        }
+                                        IdempotencyConflictPolicy::Conflict409 => {
+                                            run.fail();
+                                            Ok(this.idempotency_conflict_response(
+                                                Some(existing),
+                                                "external reference conflict",
+                                            ))
+                                        }
+                                    };
+                                }
+                            }
                             let mut claimed_key: Option<String> = None;
                             if let Some(key) = req.idempotency_key.clone() {
                                 match this.idempotency.claim(&key) {
                                     ClaimOutcome::Accepted => {
+                                        this.idempotency.begin(&key, run_id, &req);
                                         claimed_key = Some(key);
                                     }
                                     ClaimOutcome::InFlight => {
@@ -354,10 +376,16 @@ impl ServerHandler for InspectorServer {
                                     }
                                 }
                             }
+                            if let Some(key) = claimed_key.as_ref() {
+                                this.idempotency.mark_started(key, started_at);
+                            }
                             let call_outcome = if let Some(http) = req.http.as_ref() {
                                 target_descriptor.transport = "http".into();
                                 target_descriptor.url = Some(http.url.clone());
                                 target_descriptor.headers = http.headers.clone();
+                                if let Some(key) = claimed_key.as_ref() {
+                                    this.idempotency.set_target(key, target_descriptor.clone());
+                                }
                                 this.svc
                                     .call_http(
                                         http,
@@ -369,6 +397,9 @@ impl ServerHandler for InspectorServer {
                                 target_descriptor.transport = "sse".into();
                                 target_descriptor.url = Some(sse.url.clone());
                                 target_descriptor.headers = sse.headers.clone();
+                                if let Some(key) = claimed_key.as_ref() {
+                                    this.idempotency.set_target(key, target_descriptor.clone());
+                                }
                                 this.svc
                                     .call_sse(
                                         sse,
@@ -379,6 +410,9 @@ impl ServerHandler for InspectorServer {
                             } else if let Some(target) = req.stdio.as_ref() {
                                 target_descriptor.transport = "stdio".into();
                                 target_descriptor.command = Some(target.command.clone());
+                                if let Some(key) = claimed_key.as_ref() {
+                                    this.idempotency.set_target(key, target_descriptor.clone());
+                                }
                                 this.svc
                                     .call_stdio(
                                         target.command.clone(),
@@ -397,6 +431,10 @@ impl ServerHandler for InspectorServer {
                                             .map(|(program, args)| {
                                                 target_descriptor.transport = "stdio".into();
                                                 target_descriptor.command = Some(program.clone());
+                                                if let Some(key) = claimed_key.as_ref() {
+                                                    this.idempotency
+                                                        .set_target(key, target_descriptor.clone());
+                                                }
                                                 (program, args)
                                             })
                                             .map_err(|e| failure(&e.to_string()))
@@ -425,6 +463,9 @@ impl ServerHandler for InspectorServer {
                                 Ok(res) => {
                                     run.capture();
                                     let duration_ms = timer.elapsed().as_millis() as u64;
+                                    if let Some(meta_ref) = extract_external_reference(&res) {
+                                        external_reference = Some(meta_ref);
+                                    }
                                     let event = this.build_event(
                                         &run,
                                         &req,
@@ -433,12 +474,16 @@ impl ServerHandler for InspectorServer {
                                         Some(target_descriptor),
                                         this.snapshot_result(&res),
                                         None,
+                                        external_reference.clone(),
                                     );
                                     if let Err(e) = this.outbox.append(&event) {
                                         tracing::error!(%run_id, error=%e, "failed to append outbox event");
                                     }
+                                    if let Some(ref ext) = external_reference {
+                                        this.idempotency.record_external_ref(ext, event.clone());
+                                    }
                                     if let Some(key) = claimed_key {
-                                        this.idempotency.complete(&key, event);
+                                        this.idempotency.complete(&key, event.clone());
                                     }
                                     Ok(res)
                                 }
@@ -454,12 +499,16 @@ impl ServerHandler for InspectorServer {
                                         Some(target_descriptor),
                                         None,
                                         Some(message.clone()),
+                                        external_reference.clone(),
                                     );
                                     if let Err(e) = this.outbox.append(&event) {
                                         tracing::error!(%run_id, error=%e, "failed to append failed event to outbox");
                                     }
+                                    if let Some(ref ext) = external_reference {
+                                        this.idempotency.record_external_ref(ext, event.clone());
+                                    }
                                     if let Some(key) = claimed_key {
-                                        this.idempotency.complete(&key, event);
+                                        this.idempotency.complete(&key, event.clone());
                                     }
                                     Err(CallToolResult::structured_error(json!({
                                         "error": message
@@ -522,4 +571,12 @@ impl ServerHandler for InspectorServer {
             });
         }
     }
+}
+
+fn extract_external_reference(result: &CallToolResult) -> Option<String> {
+    result.meta.as_ref().and_then(|meta| {
+        meta.get("externalReference")
+            .or_else(|| meta.get("external_reference"))
+            .and_then(|value| value.as_str().map(|s| s.to_string()))
+    })
 }

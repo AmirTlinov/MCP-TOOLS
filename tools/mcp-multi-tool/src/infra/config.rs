@@ -1,7 +1,9 @@
+use crate::infra::metrics::{MetricsServerConfig, TlsConfig};
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -14,6 +16,9 @@ const DEFAULT_PROFILE: &str = "default";
 pub struct AppConfig {
     pub metrics_addr: Option<String>,
     pub allow_insecure_metrics_dev: Option<bool>,
+    pub metrics_auth_token: Option<String>,
+    pub metrics_tls_cert_path: Option<String>,
+    pub metrics_tls_key_path: Option<String>,
     pub outbox_path: Option<String>,
     pub outbox_dlq_path: Option<String>,
     pub outbox_db_path: Option<String>,
@@ -86,6 +91,15 @@ impl AppConfig {
         if let Some(value) = overlay.allow_insecure_metrics_dev {
             self.allow_insecure_metrics_dev = Some(value);
         }
+        if let Some(value) = overlay.metrics_auth_token {
+            self.metrics_auth_token = Some(value);
+        }
+        if let Some(value) = overlay.metrics_tls_cert_path {
+            self.metrics_tls_cert_path = Some(value);
+        }
+        if let Some(value) = overlay.metrics_tls_key_path {
+            self.metrics_tls_key_path = Some(value);
+        }
         if let Some(value) = overlay.outbox_path {
             self.outbox_path = Some(value);
         }
@@ -99,12 +113,48 @@ impl AppConfig {
             self.idempotency_conflict_policy = policy;
         }
     }
+
+    pub fn metrics_server_config(&self) -> Result<Option<MetricsServerConfig>> {
+        let addr = match self.metrics_addr.as_ref() {
+            Some(addr) => addr
+                .parse::<SocketAddr>()
+                .with_context(|| format!("parse METRICS_ADDR '{}'", addr))?,
+            None => return Ok(None),
+        };
+
+        let allow_insecure = self.allow_insecure_metrics_dev.unwrap_or(false);
+        let tls = match (
+            self.metrics_tls_cert_path.as_ref(),
+            self.metrics_tls_key_path.as_ref(),
+        ) {
+            (Some(cert), Some(key)) => Some(TlsConfig {
+                cert_path: PathBuf::from(cert),
+                key_path: PathBuf::from(key),
+            }),
+            (None, None) => None,
+            _ => {
+                return Err(anyhow!(
+                    "metrics TLS requires both METRICS_TLS_CERT_PATH and METRICS_TLS_KEY_PATH"
+                ));
+            }
+        };
+
+        Ok(Some(MetricsServerConfig {
+            addr,
+            auth_token: self.metrics_auth_token.clone(),
+            allow_insecure,
+            tls,
+        }))
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct ConfigOverlay {
     metrics_addr: Option<String>,
     allow_insecure_metrics_dev: Option<bool>,
+    metrics_auth_token: Option<String>,
+    metrics_tls_cert_path: Option<String>,
+    metrics_tls_key_path: Option<String>,
     outbox_path: Option<String>,
     outbox_dlq_path: Option<String>,
     outbox_db_path: Option<String>,
@@ -128,6 +178,9 @@ impl ConfigOverlay {
         let allow_insecure_metrics_dev = env::var("ALLOW_INSECURE_METRICS_DEV")
             .ok()
             .and_then(|v| v.parse::<bool>().ok());
+        let metrics_auth_token = env::var("METRICS_AUTH_TOKEN").ok();
+        let metrics_tls_cert_path = env::var("METRICS_TLS_CERT_PATH").ok();
+        let metrics_tls_key_path = env::var("METRICS_TLS_KEY_PATH").ok();
         let outbox_path = env::var("OUTBOX_PATH").ok();
         let outbox_dlq_path = env::var("OUTBOX_DLQ_PATH").ok();
         let outbox_db_path = env::var("OUTBOX_DB_PATH").ok();
@@ -137,6 +190,9 @@ impl ConfigOverlay {
         Self {
             metrics_addr,
             allow_insecure_metrics_dev,
+            metrics_auth_token,
+            metrics_tls_cert_path,
+            metrics_tls_key_path,
             outbox_path,
             outbox_dlq_path,
             outbox_db_path,
@@ -242,11 +298,17 @@ mod tests {
             &[
                 (CONFIG_PROFILE_ENV, Some("beta")),
                 ("METRICS_ADDR", Some("127.0.0.1:5555")),
+                ("METRICS_AUTH_TOKEN", Some("secret")),
+                ("METRICS_TLS_CERT_PATH", Some("/tmp/cert.pem")),
+                ("METRICS_TLS_KEY_PATH", Some("/tmp/key.pem")),
                 ("IDEMPOTENCY_CONFLICT_POLICY", Some("return_existing")),
             ],
             || {
                 let cfg = AppConfig::load_from_dir(dir.path()).expect("config load");
                 assert_eq!(cfg.metrics_addr.as_deref(), Some("127.0.0.1:5555"));
+                assert_eq!(cfg.metrics_auth_token.as_deref(), Some("secret"));
+                assert_eq!(cfg.metrics_tls_cert_path.as_deref(), Some("/tmp/cert.pem"));
+                assert_eq!(cfg.metrics_tls_key_path.as_deref(), Some("/tmp/key.pem"));
                 assert_eq!(cfg.allow_insecure_metrics_dev, Some(true));
                 assert_eq!(cfg.outbox_path.as_deref(), Some("/tmp/outbox.jsonl"));
                 assert_eq!(
@@ -255,6 +317,31 @@ mod tests {
                 );
             },
         );
+        Ok(())
+    }
+
+    #[test]
+    fn metrics_server_config_requires_tls_pair() -> Result<()> {
+        let dir = tempdir()?;
+        std::fs::write(
+            dir.path().join("default.toml"),
+            "metrics_addr = \"0.0.0.0:9100\"\nallow_insecure_metrics_dev = false\n",
+        )?;
+
+        with_env(
+            &[
+                ("METRICS_TLS_CERT_PATH", Some("cert.pem")),
+                ("METRICS_TLS_KEY_PATH", Some("key.pem")),
+            ],
+            || {
+                let cfg = AppConfig::load_from_dir(dir.path()).expect("config load");
+                let server_cfg = cfg.metrics_server_config().expect("metrics cfg");
+                let server_cfg = server_cfg.expect("metrics enabled");
+                assert_eq!(server_cfg.addr, "0.0.0.0:9100".parse().unwrap());
+                assert!(server_cfg.tls.is_some());
+            },
+        );
+
         Ok(())
     }
 }

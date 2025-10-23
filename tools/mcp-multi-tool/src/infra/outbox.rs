@@ -1,3 +1,4 @@
+use crate::infra::metrics;
 use std::fs::{OpenOptions, create_dir_all};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -95,6 +96,7 @@ impl Outbox {
                 .context("write outbox DLQ after primary failure")?;
             Err(primary_err)
         } else {
+            metrics::increment_outbox_backlog();
             Ok(())
         }
     }
@@ -178,6 +180,27 @@ mod tests {
         let count: i64 =
             conn.query_row("SELECT COUNT(*) FROM outbox_events", [], |row| row.get(0))?;
         assert_eq!(1, count);
+        Ok(())
+    }
+
+    #[test]
+    fn file_backend_fallbacks_to_dlq() -> Result<()> {
+        let dir = tempdir()?;
+        let primary_dir = dir.path().join("primary_dir");
+        std::fs::create_dir_all(&primary_dir)?;
+        let dlq = dir.path().join("dlq.jsonl");
+        let outbox = Outbox::file(&primary_dir, &dlq)?;
+        let event = DummyEvent {
+            event_id: uuid::Uuid::new_v4().to_string(),
+            payload: "fallback".into(),
+        };
+        let result = outbox.append(&event);
+        assert!(
+            result.is_err(),
+            "primary append should fail for directory path"
+        );
+        let dlq_data = std::fs::read_to_string(&dlq)?;
+        assert!(dlq_data.contains("fallback"));
         Ok(())
     }
 }
