@@ -14,7 +14,9 @@ Release binaries land in `target/release/`.
 
 ## 3. Baseline Configuration
 `config/default.toml` ships with production-safe defaults:
-- `metrics_addr` — Prometheus listener (set TLS + auth for production).
+- `metrics_addr` — Prometheus listener (defaults to 127.0.0.1:9200 for the bundled dev certificate).
+- `metrics_auth_token` — placeholder token `change-me-please-rotate`; regenerate for real deployments.
+- `metrics_tls_cert_path` / `metrics_tls_key_path` — point to `config/certs/multitool.{crt,key}` for the dev bundle; replace with your certificate chain.
 - `outbox_*` — file paths for durable run events (use sqlite via `OUTBOX_DB_PATH` for stronger guarantees).
 - `idempotency_conflict_policy` — defaults to `conflict_409`; aliases (`conflict_409`, `conflict`, `conflict409`) are accepted.
 
@@ -84,7 +86,7 @@ kill $MOCK_PID
 You should see the five inspector tools and the mock server logs confirming successful calls.
 
 ## 7. Production Checklist
-- Set `METRICS_AUTH_TOKEN`, `METRICS_TLS_CERT_PATH`, `METRICS_TLS_KEY_PATH`.
+- Rotate `METRICS_AUTH_TOKEN` and replace the dev cert/key at `config/certs/multitool.{crt,key}` with your production chain.
 - Promote sqlite outbox via `OUTBOX_DB_PATH` for durable persistence.
 - Pin `ERROR_BUDGET_*` to match your incident policy; default freeze is 5 minutes with 95% minimum success.
 - Monitor Prometheus metrics: `inspector_inflight`, `outbox_backlog`, `error_budget_frozen`, latency histograms.

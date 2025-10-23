@@ -70,7 +70,7 @@ Optional flags `--sse-url` and `--http-url` let you probe additional transports;
 
 ## Configuration Highlights
 
-- `config/default.toml` provides baseline settings (metrics, outbox paths) that travel with the binary.
+- `config/default.toml` provides baseline settings (metrics, outbox paths) that travel with the binary; a development TLS pair lives in `config/certs/` and ships with a placeholder `metrics_auth_token`—rotate it before production.
 - `APP_CONFIG_PROFILE` selects an additional `config/<profile>.toml` overlay (default profile: `default`).
 - `APP_CONFIG_DIR` overrides the configuration directory when embedding inside another bundle.
 - `METRICS_AUTH_TOKEN` issues a mandatory Bearer token for `/metrics` (omit only when `ALLOW_INSECURE_METRICS_DEV=true`).
