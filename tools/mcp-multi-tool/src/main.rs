@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
         .compact()
         .init();
 
-    let config = AppConfig::from_env();
+    let config = AppConfig::load()?;
     if let Some(addr_str) = &config.metrics_addr {
         match addr_str.parse::<SocketAddr>() {
             Ok(addr) => {

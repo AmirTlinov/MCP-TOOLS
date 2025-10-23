@@ -11,7 +11,7 @@ Format: `<ID> — <concise action> — DoD`. Every item maps to a T-ID.
 - [x] T-0001 — Initialize workspace and crate — DoD: `cargo build` passes locally.
 - [x] T-0002 — Pin `rmcp = 0.8.1` and required features — DoD: `cargo tree` stable; `Cargo.lock` updated.
 - [x] T-0003 — Domain `InspectionRun` (STATE_MACHINE) — DoD: state transition tests green.
-- [ ] T-0004 — Config via ENV/`config/` — DoD: config unit tests cover precedence.
+- [x] T-0004 — Config via ENV/`config/` — DoD: config unit tests cover precedence.
 - [x] T-0005 — Stdio MCP server handshake — DoD: integration handshake test green.
 - [x] T-0006 — Tool registry and manifest — DoD: `list_tools` returns registered tools.
 

@@ -68,6 +68,9 @@ Optional flags `--sse-url` and `--http-url` let you probe additional transports;
 
 ## Configuration Highlights
 
+- `config/default.toml` provides baseline settings (metrics, outbox paths) that travel with the binary.
+- `APP_CONFIG_PROFILE` selects an additional `config/<profile>.toml` overlay (default profile: `default`).
+- `APP_CONFIG_DIR` overrides the configuration directory when embedding inside another bundle.
 - `OUTBOX_DB_PATH` switches the outbox to a durable sqlite store (falls back to JSONL when unset).
 - `OUTBOX_PATH` and `OUTBOX_DLQ_PATH` remain append-only exports for observability and recovery.
 - `IDEMPOTENCY_CONFLICT_POLICY` toggles duplicate behaviour (`return_existing` vs `409`).

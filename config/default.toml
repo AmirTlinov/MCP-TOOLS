@@ -1,0 +1,8 @@
+# Default configuration for MCP MultiTool.
+# Environment variables override these values.
+
+metrics_addr = "127.0.0.1:9200"
+allow_insecure_metrics_dev = false
+outbox_path = "data/outbox/events.jsonl"
+outbox_dlq_path = "data/outbox/dlq.jsonl"
+idempotency_conflict_policy = "conflict_409"
